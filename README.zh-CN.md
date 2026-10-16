@@ -18,6 +18,36 @@ Agentry 由两部分配合工作：
 
 > **状态：0.1 预览版。** 目前在 opencode 上运行。0.x 版本之间，YAML 格式还可能变化。
 
+## 演示
+
+六段在真实电脑上录制的短片。每一段都是触发器自动启动 workflow，右侧是实时面板。运行过程经过加速，角落的标记显示播放速度。
+
+**每次 push 自动审代码。** push 到一个 PR 的分支后，workflow 读取改动，同时找 bug、查安全问题、跑测试，最后在 PR 上发一条审查意见。
+
+https://github.com/user-attachments/assets/52aa8e28-d228-4792-b281-c18b6ff9b90b
+
+**整理收件箱。** 新邮件一到就分流：急件起草回复，钓鱼邮件打上警告标签，推广邮件归档。标签和草稿在运行过程中就出现在 Gmail 里。
+
+https://github.com/user-attachments/assets/a4604c60-8ff8-4757-abfd-11782e6b856b
+
+**跟着改期改日历。** 邮件说期中考试改期了，workflow 找到日历里原有的那场考试并挪过去，而不是再新建一个。
+
+https://github.com/user-attachments/assets/430a35ec-1fcc-467e-b6a3-5c9911fd20c9
+
+**从课程网站同步截止日期。** 课程网站发布了新作业，它的截止日期随即出现在日历里。
+
+https://github.com/user-attachments/assets/00f13dae-d09f-4f7c-af07-32cf228b4ecb
+
+**整理下载的文件。** 下载下来名叫 `download.pdf` 的文件，被读取内容、按内容改名，再放进对应课程的文件夹。
+
+https://github.com/user-attachments/assets/4a6308b7-eef5-43d2-8a85-7900bde0aacb
+
+**写周报。** 每周五下午 5 点，同时汇总这一周的提交、日程和邮件，写出周报并修改一轮，最后作为草稿留在 Gmail 里，等人确认后发送。
+
+https://github.com/user-attachments/assets/0ca33f9b-70fd-4dce-b958-42e703f32c6f
+
+这些短片里用到的 Gmail 和 Google 日历小工具不在本仓库中。
+
 ## 功能
 
 - **编辑器**：桌面应用（Tauri），也能在浏览器里用。连线以直角绕开节点，拖动节点时实时跟着走。每个节点都有属性面板；引用断了、必需字段没有任何步骤产出这类问题，编辑时就会提示。支持 YAML 导入导出、本地历史和 15 套配色。

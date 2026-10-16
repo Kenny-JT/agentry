@@ -18,6 +18,36 @@ Agentry is two pieces that work together:
 
 > **Status: 0.1 preview.** Workflows run on opencode today. The YAML format may still change between 0.x versions.
 
+## Demo
+
+Six short clips recorded on a real machine. In each one a trigger starts the workflow by itself, and the live panel is on the right. The run is sped up; a badge in the corner shows the playback speed.
+
+**Review every push.** A push to a pull-request branch starts a workflow that reads the diff, looks for bugs, checks for security problems and runs the tests at the same time, then posts one review on the pull request.
+
+https://github.com/user-attachments/assets/52aa8e28-d228-4792-b281-c18b6ff9b90b
+
+**Sort the inbox.** New mail is sorted as it arrives: urgent mail gets a draft reply, phishing gets a warning label and promotions are archived. The labels and drafts appear in Gmail during the run.
+
+https://github.com/user-attachments/assets/a4604c60-8ff8-4757-abfd-11782e6b856b
+
+**Follow a schedule change.** An email says the midterm moved. The workflow finds the existing calendar event and moves it instead of adding a second one.
+
+https://github.com/user-attachments/assets/430a35ec-1fcc-467e-b6a3-5c9911fd20c9
+
+**Copy deadlines from a course page.** The course website posts a new homework, and its due date appears in the calendar.
+
+https://github.com/user-attachments/assets/00f13dae-d09f-4f7c-af07-32cf228b4ecb
+
+**File downloads.** A file saved as `download.pdf` is read, renamed after its content and moved into the right course folder.
+
+https://github.com/user-attachments/assets/4a6308b7-eef5-43d2-8a85-7900bde0aacb
+
+**Write the weekly report.** On Friday at 5 pm the week's commits, meetings and mail are gathered in parallel, the report is written and revised once, and it waits in Gmail as a draft for a person to send.
+
+https://github.com/user-attachments/assets/0ca33f9b-70fd-4dce-b958-42e703f32c6f
+
+The Gmail and Google Calendar helper tools used in these clips are not part of this repository.
+
 ## Features
 
 - **Editor.** A desktop app (Tauri) that also runs in the browser. Edges route around nodes at right angles and follow while you drag. Every node has an inspector; problems such as a broken reference or a required field that nothing produces show up while you edit. Workflows import from and export to YAML, with local history and 15 color themes.
