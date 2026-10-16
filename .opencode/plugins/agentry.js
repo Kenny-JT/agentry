@@ -8754,6 +8754,7 @@ function resolveInside(projectDir, rel, what) {
   if (escapes(fs.realpathSync.native(probe))) throw new ToolError(`${what} "${rel}" resolves outside the project directory (symlink)`);
   return abs;
 }
+var projectPath = (projectDir, abs) => path.relative(fs.realpathSync.native(projectDir), abs).split(path.sep).join("/");
 var clipPipe = (text, limit) => text.length > limit ? `${text.slice(0, limit)}
 …[truncated: ${text.length - limit} more characters]` : text;
 function render(text, scope, notices) {
@@ -8814,7 +8815,7 @@ function runReadFile(spec, scope, projectDir) {
   if (!stat.isFile()) throw new ToolError(`path "${rel}" is not a file`, resolved, notices);
   if (stat.size > READ_LIMIT) throw new ToolError(`path "${rel}" is ${stat.size} bytes; read_file reads at most ${READ_LIMIT}`, resolved, notices);
   const content = fs.readFileSync(abs, "utf-8");
-  const record = { path: path.relative(projectDir, abs).split(path.sep).join("/"), bytes: stat.size, content };
+  const record = { path: projectPath(projectDir, abs), bytes: stat.size, content };
   try {
     record.json = JSON.parse(content);
   } catch {
@@ -8833,7 +8834,7 @@ function runWriteFile(spec, scope, projectDir) {
   else fs.writeFileSync(abs, content);
   const bytes = Buffer.byteLength(content);
   return {
-    output: JSON.stringify({ path: path.relative(projectDir, abs).split(path.sep).join("/"), bytes, mode }),
+    output: JSON.stringify({ path: projectPath(projectDir, abs), bytes, mode }),
     resolved: [`${mode} ${abs} (${bytes} bytes)`],
     notices
   };

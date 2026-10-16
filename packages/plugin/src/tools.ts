@@ -63,6 +63,12 @@ export function resolveInside(projectDir: string, rel: string, what: string): st
   return abs
 }
 
+// Relative to the REAL project path, the base resolveInside resolved `abs` against: projectDir
+// may be an alias of it (a Windows 8.3 short name such as RUNNER~1), and mixing the two yields
+// "../../.." paths.
+const projectPath = (projectDir: string, abs: string) =>
+  path.relative(fs.realpathSync.native(projectDir), abs).split(path.sep).join("/")
+
 const clipPipe = (text: string, limit: number) =>
   text.length > limit ? `${text.slice(0, limit)}\n…[truncated: ${text.length - limit} more characters]` : text
 
@@ -123,7 +129,7 @@ function runReadFile(spec: ReadFileToolSpec, scope: TemplateScope, projectDir: s
   if (!stat.isFile()) throw new ToolError(`path "${rel}" is not a file`, resolved, notices)
   if (stat.size > READ_LIMIT) throw new ToolError(`path "${rel}" is ${stat.size} bytes; read_file reads at most ${READ_LIMIT}`, resolved, notices)
   const content = fs.readFileSync(abs, "utf-8")
-  const record: Record<string, unknown> = { path: path.relative(projectDir, abs).split(path.sep).join("/"), bytes: stat.size, content }
+  const record: Record<string, unknown> = { path: projectPath(projectDir, abs), bytes: stat.size, content }
   try { record.json = JSON.parse(content) } catch { /* not JSON: no `json` key */ }
   return { output: JSON.stringify(record), resolved, notices }
 }
@@ -140,7 +146,7 @@ function runWriteFile(spec: WriteFileToolSpec, scope: TemplateScope, projectDir:
   else fs.writeFileSync(abs, content)
   const bytes = Buffer.byteLength(content)
   return {
-    output: JSON.stringify({ path: path.relative(projectDir, abs).split(path.sep).join("/"), bytes, mode }),
+    output: JSON.stringify({ path: projectPath(projectDir, abs), bytes, mode }),
     resolved: [`${mode} ${abs} (${bytes} bytes)`],
     notices,
   }
