@@ -1,5 +1,13 @@
 import { useId, useState } from 'react';
-import { BrandMark, ExportIcon, ImportIcon, SaveIcon, SettingsIcon } from './icons';
+import {
+  BrandMark,
+  ExportIcon,
+  ImportIcon,
+  PanelLeftIcon,
+  PanelRightIcon,
+  SaveIcon,
+  SettingsIcon,
+} from './icons';
 import type { RunConnectionStatus } from '../useRunEvents';
 
 export interface ToolbarProps {
@@ -17,6 +25,10 @@ export interface ToolbarProps {
   onProjectRootChange: (root: string) => void;
   panelPort: string;
   onPanelPortChange: (port: string) => void;
+  sidebarOpen: boolean;
+  onToggleSidebar: () => void;
+  inspectorVisible: boolean;
+  onToggleInspector: () => void;
 }
 
 function observeStatusText(
@@ -58,6 +70,10 @@ export function Toolbar({
   onProjectRootChange,
   panelPort,
   onPanelPortChange,
+  sidebarOpen,
+  onToggleSidebar,
+  inspectorVisible,
+  onToggleInspector,
 }: ToolbarProps) {
   const [observeConfigOpen, setObserveConfigOpen] = useState(false);
   const popoverId = useId();
@@ -156,6 +172,30 @@ export function Toolbar({
           <ExportIcon size={15} />
           Export YAML
         </button>
+
+        <span className="agentry-toolbar__divider" />
+        <div className="agentry-toolbar__layout" role="group" aria-label="Layout">
+          <button
+            type="button"
+            className={`agentry-layoutbtn${sidebarOpen ? ' is-active' : ''}`}
+            aria-pressed={sidebarOpen}
+            aria-label="Toggle sidebar"
+            title={`${sidebarOpen ? 'Hide' : 'Show'} sidebar (Ctrl+B)`}
+            onClick={onToggleSidebar}
+          >
+            <PanelLeftIcon size={16} filled={sidebarOpen} />
+          </button>
+          <button
+            type="button"
+            className={`agentry-layoutbtn${inspectorVisible ? ' is-active' : ''}`}
+            aria-pressed={inspectorVisible}
+            aria-label="Toggle inspector"
+            title={`${inspectorVisible ? 'Hide' : 'Show'} inspector (Ctrl+Alt+B)`}
+            onClick={onToggleInspector}
+          >
+            <PanelRightIcon size={16} filled={inspectorVisible} />
+          </button>
+        </div>
       </div>
     </header>
   );

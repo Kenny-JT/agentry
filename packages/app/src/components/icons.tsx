@@ -214,3 +214,47 @@ export function WarningIcon({ size = 14, className }: IconProps) {
     </svg>
   );
 }
+
+interface PanelIconProps extends IconProps {
+  /** Paint the side pane solid — the "panel is showing" state (VS Code's layout toggles). */
+  filled?: boolean;
+}
+
+export function PanelLeftIcon({ size = 16, className, filled = false }: PanelIconProps) {
+  return (
+    <svg {...base(size, className)}>
+      <rect x="3" y="3" width="18" height="18" rx="2" />
+      <path d="M9 3v18" />
+      {filled && <path d="M5 3h4v18H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z" fill="currentColor" stroke="none" />}
+    </svg>
+  );
+}
+
+export function PanelRightIcon({ size = 16, className, filled = false }: PanelIconProps) {
+  return (
+    <svg {...base(size, className)}>
+      <rect x="3" y="3" width="18" height="18" rx="2" />
+      <path d="M15 3v18" />
+      {filled && <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4Z" fill="currentColor" stroke="none" />}
+    </svg>
+  );
+}
+
+export function PanelRightCloseIcon({ size = 14, className }: IconProps) {
+  return (
+    <svg {...base(size, className)}>
+      <rect x="3" y="3" width="18" height="18" rx="2" />
+      <path d="M15 3v18" />
+      <path d="m8 9 3 3-3 3" />
+    </svg>
+  );
+}
+
+export function PopOutIcon({ size = 14, className }: IconProps) {
+  return (
+    <svg {...base(size, className)}>
+      <path d="M21 9V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h4" />
+      <rect x="12" y="13" width="10" height="7" rx="2" />
+    </svg>
+  );
+}

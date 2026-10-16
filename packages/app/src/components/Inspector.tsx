@@ -22,7 +22,17 @@ import type {
   Workflow,
   WorkflowTriggers,
 } from '@agentry/core';
-import { ChevronDownIcon, ChevronUpIcon, PlusIcon, TrashIcon } from './icons';
+import {
+  ChevronDownIcon,
+  ChevronUpIcon,
+  PanelRightCloseIcon,
+  PanelRightIcon,
+  PlusIcon,
+  PopOutIcon,
+  TrashIcon,
+} from './icons';
+import { clampDockedWidth, startPointerDrag } from '../inspectorLayout';
+import type { InspectorPlacement } from '../inspectorLayout';
 
 const AGENT_TYPES: readonly AgentType[] = ['straight', 'branch', 'reporter', 'documenter', 'sub-workflow'];
 
@@ -187,7 +197,15 @@ export interface InspectorProps {
   onRenameNode: (oldId: string, nextId: string) => void;
   /** IN port only: the workflow's `on:` block; `undefined` = no triggers. */
   onChangeTriggers: (next: WorkflowTriggers | undefined) => void;
+  placement: InspectorPlacement;
+  onTogglePlacement: () => void;
+  onHide: () => void;
+  /** Docked only: the column width, reported live while the left sash is dragged. */
+  width?: number;
+  onResizeWidth?: (width: number) => void;
 }
+
+type HeadActionsProps = Pick<InspectorProps, 'placement' | 'onTogglePlacement' | 'onHide'>;
 
 export function Inspector({
   node,
@@ -199,9 +217,18 @@ export function Inspector({
   onChangeDefinition,
   onRenameNode,
   onChangeTriggers,
+  placement,
+  onTogglePlacement,
+  onHide,
+  width,
+  onResizeWidth,
 }: InspectorProps) {
+  const headActions = { placement, onTogglePlacement, onHide };
   return (
-    <aside className="agentry-inspector" aria-label="Node inspector">
+    <aside className={`agentry-inspector agentry-inspector--${placement}`} aria-label="Node inspector">
+      {placement === 'docked' && width !== undefined && onResizeWidth && (
+        <DockSash width={width} onResize={onResizeWidth} />
+      )}
       {node ? (
         <InspectorForm
           key={node.id}
@@ -214,6 +241,7 @@ export function Inspector({
           onChangeDefinition={onChangeDefinition}
           onRenameNode={onRenameNode}
           onChangeTriggers={onChangeTriggers}
+          headActions={headActions}
         />
       ) : (
         <div className="agentry-inspector__empty">
@@ -222,6 +250,49 @@ export function Inspector({
         </div>
       )}
     </aside>
+  );
+}
+
+function HeadActions({ placement, onTogglePlacement, onHide }: HeadActionsProps) {
+  const floating = placement === 'floating';
+  return (
+    <span className="agentry-inspector__actions">
+      <button
+        type="button"
+        className="agentry-iconbtn"
+        title={floating ? 'Dock to the right' : 'Pop out as a floating panel'}
+        aria-label={floating ? 'Dock inspector' : 'Pop out inspector'}
+        onClick={onTogglePlacement}
+      >
+        {floating ? <PanelRightIcon size={14} filled /> : <PopOutIcon size={14} />}
+      </button>
+      <button
+        type="button"
+        className="agentry-iconbtn"
+        title="Hide inspector (Ctrl+Alt+B)"
+        aria-label="Hide inspector"
+        onClick={onHide}
+      >
+        <PanelRightCloseIcon size={14} />
+      </button>
+    </span>
+  );
+}
+
+function DockSash({ width, onResize }: { width: number; onResize: (width: number) => void }) {
+  return (
+    <div
+      className="agentry-inspector__sash"
+      role="separator"
+      aria-orientation="vertical"
+      aria-label="Resize inspector"
+      onPointerDown={(event) =>
+        startPointerDrag(event, {
+          bodyClass: 'agentry-drag--col',
+          onMove: (dx) => onResize(clampDockedWidth(width - dx)),
+        })
+      }
+    />
   );
 }
 
@@ -235,7 +306,11 @@ function InspectorForm({
   onChangeDefinition,
   onRenameNode,
   onChangeTriggers,
-}: Omit<InspectorProps, 'node'> & { node: AgentFlowNode }) {
+  headActions,
+}: Omit<InspectorProps, 'node' | 'placement' | 'onTogglePlacement' | 'onHide' | 'width' | 'onResizeWidth'> & {
+  node: AgentFlowNode;
+  headActions: HeadActionsProps;
+}) {
   const nodeId = node.id;
   const def = node.data.definition;
   const [idDraft, setIdDraft] = useState(node.data.agentId);
@@ -313,6 +388,7 @@ function InspectorForm({
         <header className="agentry-inspector__head">
           <span className="agentry-inspector__eyebrow">{isInput ? 'Workflow input (IN)' : 'Workflow output (OUT)'}</span>
           <code className="agentry-inspector__id">{isInput ? 'input.json' : 'output.json'}</code>
+          <HeadActions {...headActions} />
         </header>
 
         <div className="agentry-inspector__body">
@@ -402,6 +478,7 @@ function InspectorForm({
           )}
         </span>
         <code className="agentry-inspector__id">{nodeId}</code>
+        <HeadActions {...headActions} />
       </header>
 
       <div className="agentry-inspector__body">
