@@ -32,7 +32,7 @@ test("tools/list exposes all ten tools with input schemas", async () => {
 
 test("list_workflows: every seeded file, with introduction and node count", async () => {
   const { data } = await mcp.call("list_workflows")
-  assert.deepEqual(data.workflows.map((w) => w.file), ["workflows/code-review.yaml", "workflows/hero.yaml", "workflows/tier2-probe.yaml"])
+  assert.deepEqual(data.workflows.map((w) => w.file), ["workflows/branching.yaml", "workflows/code-review.yaml", "workflows/hero.yaml"])
   const hero = data.workflows.find((w) => w.file === "workflows/hero.yaml")
   assert.equal(hero.introduction, "Explore a codebase and produce a structured summary")
   assert.equal(hero.nodes, 2)
@@ -40,9 +40,9 @@ test("list_workflows: every seeded file, with introduction and node count", asyn
 })
 
 test("get_workflow: yaml text, node summary with upstreams and branch routes, issues", async () => {
-  const { data } = await mcp.call("get_workflow", { file: "tier2-probe.yaml" })
-  assert.equal(data.file, "workflows/tier2-probe.yaml")
-  assert.match(data.yaml, /^# Tier2 probe workflow/)
+  const { data } = await mcp.call("get_workflow", { file: "branching.yaml" })
+  assert.equal(data.file, "workflows/branching.yaml")
+  assert.match(data.yaml, /^# Branch probe/)
   const classify = data.nodes.find((n) => n.id === "classify")
   assert.equal(classify.type, "branch")
   assert.deepEqual(classify.routes.map((r) => r.to), ["small_path", "big_path"])
@@ -115,9 +115,9 @@ test("edit_workflow: add + connect + rename rewrites references and prompt token
 })
 
 test("edit_workflow: remove_node cleans every reference; a failing operation writes nothing", async () => {
-  const before = readFile("workflows/tier2-probe.yaml")
+  const before = readFile("workflows/branching.yaml")
   const failed = await mcp.call("edit_workflow", {
-    file: "tier2-probe.yaml",
+    file: "branching.yaml",
     operations: [
       { op: "remove_node", id: "big_path" },
       { op: "connect", from: "classify", to: "ghost" },
@@ -125,10 +125,10 @@ test("edit_workflow: remove_node cleans every reference; a failing operation wri
   })
   assert.equal(failed.isError, true)
   assert.match(failed.text, /operation 2 \(connect\) failed: no node "ghost"/)
-  assert.equal(readFile("workflows/tier2-probe.yaml"), before)
+  assert.equal(readFile("workflows/branching.yaml"), before)
 
   const { data } = await mcp.call("edit_workflow", {
-    file: "tier2-probe.yaml",
+    file: "branching.yaml",
     operations: [
       { op: "set_branch", id: "classify", branch_on: "size", routes: [{ to: "small_path", when: { equals: "small" } }, { to: "big_path" }] },
       { op: "remove_node", id: "big_path" },
@@ -141,14 +141,14 @@ test("edit_workflow: remove_node cleans every reference; a failing operation wri
 })
 
 test("edit_workflow: an edit that leaves validation errors is refused unless forced", async () => {
-  const before = readFile("workflows/tier2-probe.yaml")
+  const before = readFile("workflows/branching.yaml")
   const ops = [{ op: "update_node", id: "classify", set: { output_schema: {} } }]
-  const refused = await mcp.call("edit_workflow", { file: "tier2-probe.yaml", operations: ops })
+  const refused = await mcp.call("edit_workflow", { file: "branching.yaml", operations: ops })
   assert.equal(refused.isError, true)
   assert.match(refused.text, /branch-field-missing|routes on "size"/)
-  assert.equal(readFile("workflows/tier2-probe.yaml"), before)
+  assert.equal(readFile("workflows/branching.yaml"), before)
 
-  const forced = await mcp.call("edit_workflow", { file: "tier2-probe.yaml", operations: ops, force: true })
+  const forced = await mcp.call("edit_workflow", { file: "branching.yaml", operations: ops, force: true })
   assert.ok(forced.data.errors > 0)
-  assert.equal(readFile("workflows/tier2-probe.yaml"), forced.data.yaml)
+  assert.equal(readFile("workflows/branching.yaml"), forced.data.yaml)
 })

@@ -1,0 +1,41 @@
+# Hero workflow — "explore a codebase and write a summary"
+
+introduction: Explore a codebase and produce a structured summary
+type: pipeline
+input:  { description: "Target project directory" }
+output: { description: "A concise project summary" }
+
+agents:
+  explore_code:
+    introduction: Discover project structure and key files
+    type: straight
+    input:
+      extra_info: "Scan top-level files and directories"
+    output:
+      schema: { files: "string[]", summary: "string" }
+    tech_stack: { agent: explore }
+    prompt: >
+      List the top-level files and directories in this project.
+      Return a brief summary of the project structure.
+      Be concise — no more than 15 lines.
+    agent_mapping:
+      opencode: explore
+
+  write_summary:
+    introduction: Synthesize exploration into a one-paragraph summary
+    type: straight
+    input:
+      from: explore_code
+    output:
+      schema: { summary: "string" }
+    tech_stack: { agent: build }
+    prompt: >
+      Based on the project exploration from the previous step,
+      write a one-paragraph project summary (≤100 words).
+      Return only the summary text, no extra commentary.
+    agent_mapping:
+      opencode: build
+
+workflow:
+  - explore_code
+  - write_summary

@@ -1,0 +1,148 @@
+# Multi-perspective parallel code review.
+# Deliverable: .agentry/output/code-review.md (structured report with action items)
+#
+# Flow: gather_context → [security ‖ quality ‖ performance] → synthesize_report
+# Uses: parallel waves, multi-input, structured JSON output
+
+introduction: Multi-perspective code review with actionable findings
+type: pipeline
+input:  { description: "Codebase to review" }
+output: { description: "Structured review report at .agentry/output/code-review.md" }
+
+agents:
+  gather_context:
+    introduction: Map the codebase and identify review targets
+    type: straight
+    input:
+      extra_info: "Focus on recently changed or core business logic files"
+    output:
+      schema: {}
+    prompt: >
+      Explore this project. Identify the files that matter most for a code review:
+      1. Check git log for recently changed files (if git repo)
+      2. Identify core business logic files (not config, not generated)
+      3. Read each identified file thoroughly
+
+      Return:
+      - Project language/framework
+      - List of files to review (path + what each does + line count)
+      - Architecture overview (how modules connect)
+      - Any obvious red flags you notice immediately
+    agent_mapping:
+      opencode: explore
+
+  security_review:
+    introduction: Security-focused review
+    type: straight
+    input:
+      from: gather_context
+    output:
+      schema: { findings: "string[]", critical_count: "number" }
+    prompt: >
+      Security review. Read every file listed in the context.
+      Check for EACH of these — do not skip any:
+
+      - Hardcoded secrets, API keys, tokens, passwords (grep for patterns)
+      - SQL injection (string concatenation in queries)
+      - XSS (unescaped user input in HTML/templates)
+      - Path traversal (user input in file paths without sanitization)
+      - Insecure dependencies (check lock file for known CVEs if possible)
+      - Missing authentication/authorization checks on sensitive routes
+      - Sensitive data in logs or error messages
+      - CORS misconfiguration (wildcard origins)
+
+      For each finding report: file:line, what's wrong, severity (critical/high/medium/low),
+      concrete fix (show the code change, not just "sanitize input").
+      If you find nothing for a category, explicitly say "checked, none found".
+    agent_mapping:
+      opencode: explore
+
+  quality_review:
+    introduction: Code quality and maintainability review
+    type: straight
+    input:
+      from: gather_context
+    output:
+      schema: { findings: "string[]", tech_debt_score: "string" }
+    prompt: >
+      Code quality review. Read every file listed in the context.
+      Check for EACH of these:
+
+      - Functions over 40 lines (name them, suggest how to split)
+      - Duplicated logic (show both locations)
+      - Unclear naming (variable/function names that don't describe intent)
+      - Empty catch blocks or swallowed errors
+      - Missing type annotations (in typed languages)
+      - Dead code (unused imports, unreachable branches, commented-out code)
+      - God objects/modules (files doing too many unrelated things)
+      - Missing input validation at module boundaries
+
+      For each finding: file:line, the problem, impact on maintainability,
+      and a concrete refactoring suggestion with example code.
+      Rate overall tech debt: low / moderate / high / critical.
+    agent_mapping:
+      opencode: explore
+
+  performance_review:
+    introduction: Performance-focused review
+    type: straight
+    input:
+      from: gather_context
+    output:
+      schema: { findings: "string[]", estimated_impact: "string" }
+    prompt: >
+      Performance review. Read every file listed in the context.
+      Check for EACH of these:
+
+      - N+1 queries or redundant database/API calls
+      - Synchronous blocking in async contexts (fs.readFileSync in a server, etc.)
+      - Missing caching for expensive computations or repeated lookups
+      - Unbounded data structures (arrays/maps that grow without limits)
+      - Memory leaks (event listeners not removed, intervals not cleared)
+      - Large synchronous loops that could be batched or streamed
+      - Unnecessary re-renders or recomputations (React/UI frameworks)
+      - Oversized imports (importing entire library for one function)
+
+      For each finding: file:line, what's slow/wasteful, estimated impact
+      (blocking, O(n²), memory leak, etc.), and a concrete optimized version.
+    agent_mapping:
+      opencode: explore
+
+  synthesize_report:
+    introduction: Combine all reviews into one prioritized report
+    type: straight
+    input:
+      from: [security_review, quality_review, performance_review]
+    output:
+      schema: { overall_grade: "string", critical_count: "number", action_items: "string[]" }
+    prompt: >
+      Combine the three review reports into a single structured document.
+      Write it to `.agentry/output/code-review.md`.
+
+      Report structure:
+      # Code Review Report
+      ## Executive Summary
+      (2-3 sentences: overall health, biggest risk, recommended priority)
+      ## Overall Grade: [A through F]
+      ## Critical Issues (fix before shipping)
+      ## High Priority (fix this sprint)
+      ## Medium Priority (schedule for next sprint)
+      ## Low Priority (tech debt backlog)
+      ## What's Done Well (positive observations — be specific)
+      ## Action Items
+      (numbered list, ordered by priority, each with: what to do, which file, effort estimate)
+
+      Rules:
+      - Deduplicate findings across reviews
+      - If reviews contradict each other, note the disagreement
+      - Grade honestly: A=exemplary, B=solid, C=needs work, D=risky, F=critical blockers
+      - Every action item must be specific enough to create a ticket from
+    agent_mapping:
+      opencode: build
+
+workflow:
+  - gather_context
+  - security_review
+  - quality_review
+  - performance_review
+  - synthesize_report

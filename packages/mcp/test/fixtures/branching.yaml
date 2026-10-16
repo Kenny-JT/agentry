@@ -1,0 +1,70 @@
+# Branch probe — a deterministic branch (classify always picks "small"), so routing
+# and skip propagation can be checked without depending on a model.
+#
+# Expected: classify→small; small_path runs; big_path is skipped; report documents it.
+
+introduction: Branch probe - branch routing, scoped skip, documenter
+type: pipeline
+input:  { description: "none - self-contained probe" }
+output: { description: "probe report" }
+
+agents:
+  classify:
+    introduction: Deterministic branch classifier
+    type: branch
+    branch_on: size
+    output:
+      schema: { size: "string", reason: "string" }
+    routes:
+      - to: small_path
+        when: { equals: "small" }
+      - to: big_path
+        when: { equals: "big" }
+    prompt: >
+      This is a routing probe. Set the field "size" to exactly "small"
+      (lowercase). Set "reason" to a short phrase. Do NOT choose "big".
+    agent_mapping:
+      opencode: build
+
+  small_path:
+    introduction: Runs when size == small
+    type: straight
+    input:
+      from: classify
+    output:
+      schema: {}
+    prompt: >
+      You are the SMALL branch. Reply with exactly one line:
+      "SMALL PATH EXECUTED".
+    agent_mapping:
+      opencode: build
+
+  big_path:
+    introduction: Runs when size == big (must be SKIPPED)
+    type: straight
+    input:
+      from: classify
+    output:
+      schema: {}
+    prompt: >
+      You are the BIG branch. Reply with exactly one line:
+      "BIG PATH EXECUTED".
+    agent_mapping:
+      opencode: build
+
+  report:
+    introduction: Aggregate all node logs
+    type: documenter
+    output:
+      schema: {}
+    prompt: >
+      Based on the run logs, state which branch path executed and which was
+      skipped. Reply in under 60 words.
+    agent_mapping:
+      opencode: build
+
+workflow:
+  - classify
+  - small_path
+  - big_path
+  - report

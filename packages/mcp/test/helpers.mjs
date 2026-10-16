@@ -1,4 +1,4 @@
-// Shared by the suites: a temp project seeded from the repo's workflows/, and an MCP client
+// Shared by the suites: a temp project seeded from test/fixtures/, and an MCP client
 // over stdio to the BUILT server (dist/agentry-mcp.mjs).
 import fs from "node:fs"
 import os from "node:os"
@@ -9,12 +9,12 @@ import { StdioClientTransport } from "@modelcontextprotocol/client/stdio"
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 export const BUNDLE = path.join(here, "..", "dist", "agentry-mcp.mjs")
-export const REPO_WORKFLOWS = path.join(here, "..", "..", "..", "workflows")
+export const FIXTURES = path.join(here, "fixtures")
 
-export function seedProject(files = ["hero.yaml", "code-review.yaml", "tier2-probe.yaml"]) {
+export function seedProject(files = ["hero.yaml", "code-review.yaml", "branching.yaml"]) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "agentry-mcp-"))
   fs.mkdirSync(path.join(dir, "workflows"))
-  for (const name of files) fs.copyFileSync(path.join(REPO_WORKFLOWS, name), path.join(dir, "workflows", name))
+  for (const name of files) fs.copyFileSync(path.join(FIXTURES, name), path.join(dir, "workflows", name))
   return dir
 }
 
