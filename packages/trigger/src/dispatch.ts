@@ -109,10 +109,23 @@ export class Dispatcher {
     fs.closeSync(out);
   }
 
-  /** Any request naming the directory makes the server load that project (plugins included). */
+  /**
+   * Any request naming the directory makes the server load that project (plugins included).
+   * The first load of a project also installs the plugin's dependency into `.opencode/`, which
+   * can take a minute or two, hence the long wait.
+   */
   private async wakeProject(): Promise<void> {
     const url = `${this.opts.serverUrl}/path?directory=${encodeURIComponent(this.opts.projectDir)}`;
-    const res = await fetch(url, { headers: this.authHeader(), signal: AbortSignal.timeout(120_000) });
+    const wakeMs = 5 * 60_000;
+    let res: Response;
+    try {
+      res = await fetch(url, { headers: this.authHeader(), signal: AbortSignal.timeout(wakeMs) });
+    } catch (err) {
+      if (err instanceof Error && err.name === 'TimeoutError') {
+        throw new Error(`opencode did not finish loading ${this.opts.projectDir} within ${wakeMs / 60_000} minutes (the first start of a project installs the plugin's dependency; try again once it is done)`);
+      }
+      throw err;
+    }
     if (res.status === 401) throw new Error(`opencode server ${this.opts.serverUrl} rejected the password (OPENCODE_SERVER_PASSWORD)`);
     if (!res.ok) throw new Error(`opencode server ${this.opts.serverUrl} answered ${res.status} for ${url}`);
   }
