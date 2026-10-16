@@ -1,0 +1,27 @@
+{
+  "name": "@agentry/mcp",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "agentry-mcp: a stdio MCP server that lets any agent host list, edit, validate, run and watch a project's Agentry workflows.",
+  "bin": {
+    "agentry-mcp": "./dist/agentry-mcp.mjs"
+  },
+  "scripts": {
+    "build": "node build.mjs",
+    "typecheck": "tsc --noEmit",
+    "test": "node build.mjs && node --test test/*.test.mjs"
+  },
+  "dependencies": {
+    "@agentry/core": "workspace:*",
+    "@agentry/trigger": "workspace:*",
+    "@modelcontextprotocol/server": "^2.3.1",
+    "yaml": "^2.6.0",
+    "zod": "^4.2.0"
+  },
+  "devDependencies": {
+    "@modelcontextprotocol/client": "^2.3.1",
+    "@types/node": "^22.20.0",
+    "esbuild": "^0.21.5"
+  }
+}

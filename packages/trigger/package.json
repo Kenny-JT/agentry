@@ -7,6 +7,12 @@
   "bin": {
     "agentry-watch": "./dist/agentry-watch.mjs"
   },
+  "exports": {
+    "./dispatch": {
+      "types": "./src/dispatch.ts",
+      "default": "./src/dispatch.ts"
+    }
+  },
   "scripts": {
     "build": "node build.mjs",
     "typecheck": "tsc --noEmit",
