@@ -16,7 +16,7 @@ Agentry is two pieces that work together:
 - **An editor** for multi-agent workflows. Place agents on a canvas, connect what one produces to what the next one reads, and add branches, conditions, loops and parallel steps. The result is a plain `workflow.yaml` that you can read, diff and commit.
 - **A runtime plugin for [opencode](https://opencode.ai)** that runs the file. Steps that don't depend on each other run at the same time, each step leaves its output on disk, a checkpoint after every step lets a stopped run continue where it left off, and a live panel shows the run as it happens.
 
-> **Status: 0.1 preview.** Workflows run on opencode today. The YAML format may still change between 0.x versions.
+> **Status: 0.1 preview.** Workflows run on opencode today; Claude Code, Codex and other MCP hosts can edit and start them through the [MCP server](#use-it-from-other-coding-agents-mcp). The YAML format may still change between 0.x versions.
 
 ## Demo
 
@@ -55,6 +55,7 @@ The Gmail and Google Calendar helper tools used in these clips are not part of t
 - **Tool steps.** Steps that run without a model: an HTTP request, reading or writing a file inside the project, or a script. Their output is JSON, so later steps and branches can use its fields.
 - **Runtime.** The opencode plugin runs independent steps in parallel, writes each step's output and log under `.agentry/runs/`, resumes from the last checkpoint, opens a live panel in its own window, and can finish a run with a Markdown report of what every step did.
 - **Watch runs in the editor.** Point the editor at your project and a run lights up on the same canvas you drew it on.
+- **Use it from other coding agents.** An MCP server lets Claude Code, Codex, Cursor and other MCP hosts list, check, edit, run and follow the workflows in a project.
 - **Triggers.** `agentry-watch` starts a workflow when files land in a folder, at a set time, when a web page or a Gmail inbox changes, or when you push to a git branch.
 
 ## Quick start
@@ -161,6 +162,17 @@ node packages/trigger/dist/agentry-watch.mjs --dir path/to/your/project
 
 The `mail` trigger reads Gmail and needs a Google OAuth client: run `agentry-watch auth google --client client.json` once.
 
+## Use it from other coding agents (MCP)
+
+[`packages/mcp`](packages/mcp) is an MCP server for one project. Through it, Claude Code, Codex, Cursor, opencode or any other MCP host can list, read, validate, edit and save workflows, start a run, follow it and stop it. Runs still execute on opencode, so the project needs the plugin from the quick start.
+
+```sh
+pnpm --filter @agentry/mcp build
+claude mcp add agentry --scope project -- node /path/to/agentry/packages/mcp/dist/agentry-mcp.mjs --dir .
+```
+
+[`packages/mcp/README.md`](packages/mcp/README.md) has the setup for Codex, Cursor, opencode and Claude Desktop, plus a skill file that teaches an agent the workflow format.
+
 ## Run from source
 
 Node 22.6 or newer and pnpm 11. The desktop window also needs Rust and the [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/).
@@ -183,6 +195,7 @@ pnpm verify       # everything CI checks
 | `packages/app` | The editor (Vite + React, wrapped by Tauri) |
 | `packages/plugin` | The opencode plugin, built into `.opencode/plugins/agentry.js` |
 | `packages/trigger` | `agentry-watch` |
+| `packages/mcp` | `agentry-mcp`, the MCP server |
 | `packages/design` | Design tokens and color themes |
 | `workflows/` | Example workflows |
 
