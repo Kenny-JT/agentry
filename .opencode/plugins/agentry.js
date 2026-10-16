@@ -8742,7 +8742,7 @@ function resolveInside(projectDir, rel, what) {
   const abs = path.resolve(root, rel);
   const escapes = (candidate) => {
     const between = path.relative(root, candidate);
-    return between.startsWith("..") || path.isAbsolute(between);
+    return between === ".." || between.startsWith(`..${path.sep}`) || path.isAbsolute(between);
   };
   if (escapes(abs)) throw new ToolError(`${what} "${rel}" escapes the project directory`);
   let probe = abs;

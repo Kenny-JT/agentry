@@ -48,7 +48,8 @@ export function resolveInside(projectDir: string, rel: string, what: string): st
   const abs = path.resolve(root, rel)
   const escapes = (candidate: string) => {
     const between = path.relative(root, candidate)
-    return between.startsWith("..") || path.isAbsolute(between)
+    // `..` or `../x` leaves the root; a child literally named `..notes` does not
+    return between === ".." || between.startsWith(`..${path.sep}`) || path.isAbsolute(between)
   }
   if (escapes(abs)) throw new ToolError(`${what} "${rel}" escapes the project directory`)
   // symlinks: the real location of the nearest existing ancestor must also be inside
