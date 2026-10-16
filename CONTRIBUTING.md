@@ -23,6 +23,7 @@ pnpm verify         # everything CI runs; do this before opening a pull request
 | `packages/app` | The editor (Vite + React, wrapped by Tauri in `src-tauri`). |
 | `packages/plugin` | The opencode plugin: runs a workflow and serves the live panel. |
 | `packages/trigger` | `agentry-watch`, which starts workflows from their `on:` triggers. |
+| `packages/mcp` | `agentry-mcp`, the MCP server that lets other agents edit and run workflows. |
 | `workflows/` | Example workflows. |
 | `design/logo/` | Logo files; `app-icon-1024.png` is the source of the desktop icons. |
 

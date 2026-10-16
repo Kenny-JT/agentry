@@ -16,7 +16,7 @@ Agentry 由两部分配合工作：
 - **编辑器**：在画布上摆放 agent，把一个 agent 的输出连到下一个 agent 的输入，再加上分支、条件、循环和并行步骤。结果是一份普通的 `workflow.yaml`，可以直接阅读、对比差异、提交到 git。
 - **[opencode](https://opencode.ai) 运行插件**：负责执行这份文件。互不依赖的步骤同时运行；每一步的输出都存到磁盘上；每步之后都有检查点，中断了可以从断点接着跑；运行过程在实时面板里看得到。
 
-> **状态：0.1 预览版。** 目前在 opencode 上运行。0.x 版本之间，YAML 格式还可能变化。
+> **状态：0.1 预览版。** 目前在 opencode 上运行；Claude Code、Codex 等支持 MCP 的工具可以通过 [MCP 服务](#在其它编程-agent-里使用mcp)编辑和启动 workflow。0.x 版本之间，YAML 格式还可能变化。
 
 ## 演示
 
@@ -55,6 +55,7 @@ https://github.com/user-attachments/assets/0ca33f9b-70fd-4dce-b958-42e703f32c6f
 - **工具步骤**：不经过模型的步骤：发 HTTP 请求、读写项目里的文件、运行脚本。它们的输出是 JSON，后面的步骤和分支可以直接用里面的字段。
 - **运行时**：opencode 插件并行执行互不依赖的步骤，把每一步的输出和日志写到 `.agentry/runs/` 下，能从最近的检查点续跑，在独立窗口里打开实时面板，最后还能生成一份 Markdown 报告，写清每一步做了什么。
 - **在编辑器里看运行**：让编辑器指向你的项目，运行时就在你画图的那块画布上逐个点亮。
+- **在其它编程 agent 里使用**：通过 MCP 服务，Claude Code、Codex、Cursor 等工具可以列出、检查、修改、运行和跟踪项目里的 workflow。
 - **触发器**：`agentry-watch` 会在这些时候自动启动 workflow：文件夹里来了新文件、到了设定时间、网页或 Gmail 收件箱有变化、你 push 到了某个 git 分支。
 
 ## 快速开始
@@ -161,6 +162,17 @@ node packages/trigger/dist/agentry-watch.mjs --dir path/to/your/project
 
 `mail` 触发器读取 Gmail，需要一个 Google OAuth 客户端：先运行一次 `agentry-watch auth google --client client.json`。
 
+## 在其它编程 agent 里使用（MCP）
+
+[`packages/mcp`](packages/mcp) 是一个面向单个项目的 MCP 服务。通过它，Claude Code、Codex、Cursor、opencode 或任何支持 MCP 的工具都可以列出、读取、校验、修改、保存 workflow，以及启动、跟踪和停止一次运行。运行本身仍然在 opencode 上执行，所以项目里要装好快速开始里说的插件。
+
+```sh
+pnpm --filter @agentry/mcp build
+claude mcp add agentry --scope project -- node /path/to/agentry/packages/mcp/dist/agentry-mcp.mjs --dir .
+```
+
+Codex、Cursor、opencode 和 Claude Desktop 的配置方法见 [`packages/mcp/README.md`](packages/mcp/README.md)，那里还有一个教 agent 写 workflow 格式的 skill 文件。
+
 ## 从源码运行
 
 需要 Node 22.6 或更新版本和 pnpm 11。桌面窗口还需要 Rust 和 [Tauri 的系统依赖](https://v2.tauri.app/start/prerequisites/)。
@@ -183,6 +195,7 @@ pnpm verify       # CI 检查的全部内容
 | `packages/app` | 编辑器（Vite + React，用 Tauri 打包成桌面应用） |
 | `packages/plugin` | opencode 插件，构建产物是 `.opencode/plugins/agentry.js` |
 | `packages/trigger` | `agentry-watch` |
+| `packages/mcp` | `agentry-mcp`，MCP 服务 |
 | `packages/design` | 设计 token 和配色主题 |
 | `workflows/` | 示例 workflow |
 

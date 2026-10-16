@@ -31,13 +31,15 @@ jobs:
       - name: Tag matches the repo version
         run: node scripts/version.mjs --check --expect "$GITHUB_REF_NAME"
 
-      - name: Bundle the plugin and agentry-watch
+      - name: Bundle the plugin, agentry-watch and agentry-mcp
         run: |
           pnpm --filter @agentry/plugin check
           pnpm --filter @agentry/trigger build
+          pnpm --filter @agentry/mcp build
           mkdir -p release
           cp .opencode/plugins/agentry.js release/agentry.js
           cp packages/trigger/dist/agentry-watch.mjs release/agentry-watch.mjs
+          cp packages/mcp/dist/agentry-mcp.mjs release/agentry-mcp.mjs
 
       - name: Notes from CHANGELOG.md
         run: |
@@ -55,6 +57,7 @@ jobs:
           files: |
             release/agentry.js
             release/agentry-watch.mjs
+            release/agentry-mcp.mjs
 
   desktop:
     needs: prepare
