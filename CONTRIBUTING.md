@@ -54,4 +54,5 @@ To release:
 1. On a branch: `node scripts/version.mjs bump minor` (or `patch`, or `set X.Y.Z`), and rename the `[Unreleased]` heading in `CHANGELOG.md` to `[X.Y.Z] - YYYY-MM-DD` with a fresh empty `[Unreleased]` above it.
 2. Merge that pull request.
 3. Tag `main`: `git tag vX.Y.Z` and `git push origin vX.Y.Z`.
-4. The Release workflow builds a draft GitHub release with the plugin, `agentry-watch` and the desktop installers. Check it, then publish it.
+4. The Release workflow builds a draft GitHub release with the plugin, `agentry-watch`, `agentry-mcp` and the desktop installers. Check it, then publish it.
+5. Publishing the release starts the npm workflow, which publishes `agentry-mcp`, `agentry-watch` and `opencode-agentry` from the release files. It needs the `NPM_TOKEN` repository secret (an npm automation token); without it the workflow only does a dry run. For a release that is already out, run the npm workflow by hand with its tag.
