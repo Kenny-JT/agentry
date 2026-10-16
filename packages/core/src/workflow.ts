@@ -8,6 +8,7 @@
  * Source of truth for: the App (editor, export) and the plugin runner (parse).
  */
 
+import type { ToolSpec } from './tool';
 import type { WorkflowTriggers } from './triggers';
 
 /**
@@ -32,6 +33,12 @@ export type AgentType =
    */
   | 'documenter'
   | 'sub-workflow'
+  /**
+   * Deterministic step with NO model (PROVISIONAL, docs/09 "Tool nodes"): an
+   * HTTP request, a file read/write or a script, described by {@link AgentDefinition.tool}.
+   * The runner dispatches on this type; `prompt` / `agent_mapping` are absent.
+   */
+  | 'tool'
   /**
    * Workflow-level Vivado I/O boundary ports (Phase-5, App-only editing vocab).
    * These are NOT executable agents and NEVER serialize into `agents{}`; the
@@ -199,10 +206,12 @@ export interface AgentDefinition {
   input?: AgentInput;
   output: AgentOutput;
   tech_stack?: TechStack;
-  /** Required for executable node types; OMITTED for type === 'sub-workflow'. */
+  /** Required for agent node types; OMITTED for type === 'sub-workflow' and 'tool'. */
   prompt?: string;
-  /** Required for executable node types; OMITTED for type === 'sub-workflow'. */
+  /** Required for agent node types; OMITTED for type === 'sub-workflow' and 'tool'. */
   agent_mapping?: AgentMapping;
+  /** What the step does, for type === 'tool' (required there; absent elsewhere). */
+  tool?: ToolSpec;
   trigger?: Trigger;
   /** Output field whose value the branch routes on (only for type === 'branch'). */
   branch_on?: string;

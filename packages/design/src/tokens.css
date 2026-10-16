@@ -40,6 +40,9 @@
      toward subworkflow. Defined once here (not per-theme) — the var() refs resolve
      against each theme's reporter/subworkflow at use time, so it auto-follows. */
   --agentry-color-type-documenter: color-mix(in srgb, var(--agentry-color-type-reporter) 60%, var(--agentry-color-type-subworkflow));
+  /* Tool nodes (no model): the straight blue damped toward the theme's secondary
+     text, so a deterministic step reads quieter than an agent in every palette. */
+  --agentry-color-type-tool: color-mix(in srgb, var(--agentry-color-type-straight) 45%, var(--agentry-color-text-secondary));
 
   /* Unified node-state colors: done=green, running=amber, pending=gray, failed=red. */
   --agentry-state-done: #3fb950;

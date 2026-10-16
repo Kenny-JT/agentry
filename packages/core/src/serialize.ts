@@ -43,7 +43,7 @@ export function normalizeWorkflow(raw: unknown): Workflow {
       ...def,
       output: { ...output, schema: output.schema ?? {} },
     };
-    if (def.type !== 'sub-workflow') {
+    if (def.type !== 'sub-workflow' && def.type !== 'tool') {
       normalized.prompt = def.prompt ?? '';
       normalized.agent_mapping = def.agent_mapping ?? { opencode: 'build' };
     }

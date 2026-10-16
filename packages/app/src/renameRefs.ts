@@ -18,6 +18,7 @@
  * `select` entry order and field arrays pass through verbatim (round-trip
  * identity depends on it); route order and conditions are preserved.
  */
+import { renameToolRefs } from '@agentry/core';
 import type { AgentDefinition } from '@agentry/core';
 
 export function renameDefinitionRefs(
@@ -49,6 +50,13 @@ export function renameDefinitionRefs(
   const when = trigger?.when;
   if (trigger && when && when.from === oldId) {
     next = { ...next, trigger: { ...trigger, when: { ...when, from: nextId } } };
+  }
+
+  // 4. `{oldId.field}` template references inside a tool node's spec.
+  const tool = definition.tool;
+  if (tool) {
+    const renamed = renameToolRefs(tool, oldId, nextId);
+    if (renamed !== tool) next = { ...next, tool: renamed };
   }
 
   return next;

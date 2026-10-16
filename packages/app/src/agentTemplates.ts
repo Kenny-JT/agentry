@@ -1,7 +1,8 @@
 import type { AgentFlowNode, XYPosition } from '@agentry/canvas';
-import type { AgentDefinition, AgentType } from '@agentry/core';
+import { HTTP_TIMEOUT_S, SCRIPT_TIMEOUT_S, TOOL_OUTPUT_SCHEMA } from '@agentry/core';
+import type { AgentDefinition, AgentType, ToolSpec } from '@agentry/core';
 
-export type AgentGroup = 'opencode' | 'omo' | 'control';
+export type AgentGroup = 'opencode' | 'omo' | 'control' | 'tools';
 
 export interface AgentTemplate {
   id: string;
@@ -12,6 +13,8 @@ export interface AgentTemplate {
   opencodeAgent: string;
   prompt: string;
   outputSchema: Record<string, string>;
+  /** Only for type === 'tool': the deterministic step the node performs. */
+  tool?: ToolSpec;
 }
 
 export const AGENT_DROP_MIME = 'application/agentry-template';
@@ -20,9 +23,10 @@ export const agentGroupLabel: Record<AgentGroup, string> = {
   opencode: 'opencode',
   omo: 'OmO agents',
   control: 'Control flow',
+  tools: 'Tools',
 };
 
-export const agentGroups: readonly AgentGroup[] = ['opencode', 'omo', 'control'];
+export const agentGroups: readonly AgentGroup[] = ['opencode', 'omo', 'control', 'tools'];
 
 export const agentTemplates: readonly AgentTemplate[] = [
   {
@@ -177,6 +181,50 @@ export const agentTemplates: readonly AgentTemplate[] = [
     prompt: 'Run the referenced workflow and return its result to the parent.',
     outputSchema: { result: 'string' },
   },
+  {
+    id: 'http',
+    name: 'HTTP request',
+    description: 'Fetch a URL or call an API, no model',
+    group: 'tools',
+    type: 'tool',
+    opencodeAgent: '',
+    prompt: '',
+    outputSchema: TOOL_OUTPUT_SCHEMA.http,
+    tool: { kind: 'http', method: 'GET', url: 'https://example.com/{input}', headers: { Accept: 'application/json' }, timeout_s: HTTP_TIMEOUT_S },
+  },
+  {
+    id: 'read_file',
+    name: 'Read file',
+    description: 'Read a file from the project',
+    group: 'tools',
+    type: 'tool',
+    opencodeAgent: '',
+    prompt: '',
+    outputSchema: TOOL_OUTPUT_SCHEMA.read_file,
+    tool: { kind: 'read_file', path: 'README.md' },
+  },
+  {
+    id: 'write_file',
+    name: 'Write file',
+    description: 'Write the upstream output to a file',
+    group: 'tools',
+    type: 'tool',
+    opencodeAgent: '',
+    prompt: '',
+    outputSchema: TOOL_OUTPUT_SCHEMA.write_file,
+    tool: { kind: 'write_file', path: 'out/result.json', mode: 'overwrite' },
+  },
+  {
+    id: 'script',
+    name: 'Run script',
+    description: 'Run a command with the upstream JSON on stdin',
+    group: 'tools',
+    type: 'tool',
+    opencodeAgent: '',
+    prompt: '',
+    outputSchema: TOOL_OUTPUT_SCHEMA.script,
+    tool: { kind: 'script', command: ['python3', 'scripts/process.py'], timeout_s: SCRIPT_TIMEOUT_S },
+  },
 ];
 
 const templatesById = new Map(agentTemplates.map((template) => [template.id, template]));
@@ -189,6 +237,14 @@ export function templateToDefinition(template: AgentTemplate): AgentDefinition {
       introduction: template.name,
       type: template.type,
       output: { schema: {} },
+    };
+  }
+  if (template.type === 'tool') {
+    return {
+      introduction: template.name,
+      type: template.type,
+      output: { schema: template.outputSchema },
+      tool: structuredClone(template.tool ?? { kind: 'http', url: '' }),
     };
   }
   const definition: AgentDefinition = {

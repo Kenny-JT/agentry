@@ -11,6 +11,7 @@
  * Pure functions: no I/O, no DOM.
  */
 
+import { checkToolSpec } from './tool';
 import type { AgentDefinition, BranchRoute, Condition, RouteCondition, Workflow } from './workflow';
 
 export const fromList = (from: string | string[] | undefined): string[] =>
@@ -101,7 +102,10 @@ export function strictJsonNodes(workflow: Pick<Workflow, 'agents'>): Set<string>
     const select = def.input?.select;
     if (!isRecord(select)) continue;
     const sources = inputSources(def, parents.get(id) ?? []);
-    for (const upstream of Object.keys(select)) if (sources.includes(upstream)) strict.add(upstream);
+    // a tool node's output is JSON by construction — nothing to force
+    for (const upstream of Object.keys(select)) {
+      if (sources.includes(upstream) && workflow.agents[upstream]?.type !== 'tool') strict.add(upstream);
+    }
   }
   return strict;
 }
@@ -216,8 +220,9 @@ export function checkRunnable(raw: unknown): RunnableCheck {
       errors.push(`agents.${id}: not an object`);
       continue;
     }
-    // sub-workflow nodes are containers, not prompt agents — prompt/agent_mapping omitted (docs/10 §6.3)
-    if (value.type !== 'sub-workflow') {
+    // sub-workflow nodes are containers and tool nodes run no model — neither has prompt/agent_mapping
+    if (value.type === 'tool') errors.push(...checkToolSpec(id, value.tool));
+    else if (value.type !== 'sub-workflow') {
       if (typeof value.prompt !== 'string') errors.push(`agents.${id}: missing prompt`);
       if (!isRecord(value.agent_mapping)) errors.push(`agents.${id}: missing agent_mapping`);
       else if (typeof value.agent_mapping.opencode !== 'string') errors.push(`agents.${id}.agent_mapping: missing opencode`);

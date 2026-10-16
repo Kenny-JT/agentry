@@ -14,6 +14,7 @@ const TYPE_CLASS: Record<AgentType, string> = {
   reporter: 'is-type-reporter',
   documenter: 'is-type-documenter',
   'sub-workflow': 'is-type-subworkflow',
+  tool: 'is-type-tool',
   'workflow-input': 'is-type-input',
   'workflow-output': 'is-type-output',
 };

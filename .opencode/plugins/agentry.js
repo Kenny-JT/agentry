@@ -111,17 +111,17 @@ var require_visit = __commonJS({
     visit.BREAK = BREAK;
     visit.SKIP = SKIP;
     visit.REMOVE = REMOVE;
-    function visit_(key, node, visitor, path2) {
-      const ctrl = callVisitor(key, node, visitor, path2);
+    function visit_(key, node, visitor, path3) {
+      const ctrl = callVisitor(key, node, visitor, path3);
       if (identity.isNode(ctrl) || identity.isPair(ctrl)) {
-        replaceNode(key, path2, ctrl);
-        return visit_(key, ctrl, visitor, path2);
+        replaceNode(key, path3, ctrl);
+        return visit_(key, ctrl, visitor, path3);
       }
       if (typeof ctrl !== "symbol") {
         if (identity.isCollection(node)) {
-          path2 = Object.freeze(path2.concat(node));
+          path3 = Object.freeze(path3.concat(node));
           for (let i = 0; i < node.items.length; ++i) {
-            const ci = visit_(i, node.items[i], visitor, path2);
+            const ci = visit_(i, node.items[i], visitor, path3);
             if (typeof ci === "number")
               i = ci - 1;
             else if (ci === BREAK)
@@ -132,13 +132,13 @@ var require_visit = __commonJS({
             }
           }
         } else if (identity.isPair(node)) {
-          path2 = Object.freeze(path2.concat(node));
-          const ck = visit_("key", node.key, visitor, path2);
+          path3 = Object.freeze(path3.concat(node));
+          const ck = visit_("key", node.key, visitor, path3);
           if (ck === BREAK)
             return BREAK;
           else if (ck === REMOVE)
             node.key = null;
-          const cv = visit_("value", node.value, visitor, path2);
+          const cv = visit_("value", node.value, visitor, path3);
           if (cv === BREAK)
             return BREAK;
           else if (cv === REMOVE)
@@ -159,17 +159,17 @@ var require_visit = __commonJS({
     visitAsync.BREAK = BREAK;
     visitAsync.SKIP = SKIP;
     visitAsync.REMOVE = REMOVE;
-    async function visitAsync_(key, node, visitor, path2) {
-      const ctrl = await callVisitor(key, node, visitor, path2);
+    async function visitAsync_(key, node, visitor, path3) {
+      const ctrl = await callVisitor(key, node, visitor, path3);
       if (identity.isNode(ctrl) || identity.isPair(ctrl)) {
-        replaceNode(key, path2, ctrl);
-        return visitAsync_(key, ctrl, visitor, path2);
+        replaceNode(key, path3, ctrl);
+        return visitAsync_(key, ctrl, visitor, path3);
       }
       if (typeof ctrl !== "symbol") {
         if (identity.isCollection(node)) {
-          path2 = Object.freeze(path2.concat(node));
+          path3 = Object.freeze(path3.concat(node));
           for (let i = 0; i < node.items.length; ++i) {
-            const ci = await visitAsync_(i, node.items[i], visitor, path2);
+            const ci = await visitAsync_(i, node.items[i], visitor, path3);
             if (typeof ci === "number")
               i = ci - 1;
             else if (ci === BREAK)
@@ -180,13 +180,13 @@ var require_visit = __commonJS({
             }
           }
         } else if (identity.isPair(node)) {
-          path2 = Object.freeze(path2.concat(node));
-          const ck = await visitAsync_("key", node.key, visitor, path2);
+          path3 = Object.freeze(path3.concat(node));
+          const ck = await visitAsync_("key", node.key, visitor, path3);
           if (ck === BREAK)
             return BREAK;
           else if (ck === REMOVE)
             node.key = null;
-          const cv = await visitAsync_("value", node.value, visitor, path2);
+          const cv = await visitAsync_("value", node.value, visitor, path3);
           if (cv === BREAK)
             return BREAK;
           else if (cv === REMOVE)
@@ -213,23 +213,23 @@ var require_visit = __commonJS({
       }
       return visitor;
     }
-    function callVisitor(key, node, visitor, path2) {
+    function callVisitor(key, node, visitor, path3) {
       if (typeof visitor === "function")
-        return visitor(key, node, path2);
+        return visitor(key, node, path3);
       if (identity.isMap(node))
-        return visitor.Map?.(key, node, path2);
+        return visitor.Map?.(key, node, path3);
       if (identity.isSeq(node))
-        return visitor.Seq?.(key, node, path2);
+        return visitor.Seq?.(key, node, path3);
       if (identity.isPair(node))
-        return visitor.Pair?.(key, node, path2);
+        return visitor.Pair?.(key, node, path3);
       if (identity.isScalar(node))
-        return visitor.Scalar?.(key, node, path2);
+        return visitor.Scalar?.(key, node, path3);
       if (identity.isAlias(node))
-        return visitor.Alias?.(key, node, path2);
+        return visitor.Alias?.(key, node, path3);
       return void 0;
     }
-    function replaceNode(key, path2, node) {
-      const parent = path2[path2.length - 1];
+    function replaceNode(key, path3, node) {
+      const parent = path3[path3.length - 1];
       if (identity.isCollection(parent)) {
         parent.items[key] = node;
       } else if (identity.isPair(parent)) {
@@ -839,10 +839,10 @@ var require_Collection = __commonJS({
     var createNode = require_createNode();
     var identity = require_identity();
     var Node = require_Node();
-    function collectionFromPath(schema, path2, value) {
+    function collectionFromPath(schema, path3, value) {
       let v = value;
-      for (let i = path2.length - 1; i >= 0; --i) {
-        const k = path2[i];
+      for (let i = path3.length - 1; i >= 0; --i) {
+        const k = path3[i];
         if (typeof k === "number" && Number.isInteger(k) && k >= 0) {
           const a = [];
           a[k] = v;
@@ -861,7 +861,7 @@ var require_Collection = __commonJS({
         sourceObjects: /* @__PURE__ */ new Map()
       });
     }
-    var isEmptyPath = (path2) => path2 == null || typeof path2 === "object" && !!path2[Symbol.iterator]().next().done;
+    var isEmptyPath = (path3) => path3 == null || typeof path3 === "object" && !!path3[Symbol.iterator]().next().done;
     var Collection = class extends Node.NodeBase {
       constructor(type, schema) {
         super(type);
@@ -891,11 +891,11 @@ var require_Collection = __commonJS({
        * be a Pair instance or a `{ key, value }` object, which may not have a key
        * that already exists in the map.
        */
-      addIn(path2, value) {
-        if (isEmptyPath(path2))
+      addIn(path3, value) {
+        if (isEmptyPath(path3))
           this.add(value);
         else {
-          const [key, ...rest] = path2;
+          const [key, ...rest] = path3;
           const node = this.get(key, true);
           if (identity.isCollection(node))
             node.addIn(rest, value);
@@ -909,8 +909,8 @@ var require_Collection = __commonJS({
        * Removes a value from the collection.
        * @returns `true` if the item was found and removed.
        */
-      deleteIn(path2) {
-        const [key, ...rest] = path2;
+      deleteIn(path3) {
+        const [key, ...rest] = path3;
         if (rest.length === 0)
           return this.delete(key);
         const node = this.get(key, true);
@@ -924,8 +924,8 @@ var require_Collection = __commonJS({
        * scalar values from their surrounding node; to disable set `keepScalar` to
        * `true` (collections are always returned intact).
        */
-      getIn(path2, keepScalar) {
-        const [key, ...rest] = path2;
+      getIn(path3, keepScalar) {
+        const [key, ...rest] = path3;
         const node = this.get(key, true);
         if (rest.length === 0)
           return !keepScalar && identity.isScalar(node) ? node.value : node;
@@ -943,8 +943,8 @@ var require_Collection = __commonJS({
       /**
        * Checks if the collection includes a value with the key `key`.
        */
-      hasIn(path2) {
-        const [key, ...rest] = path2;
+      hasIn(path3) {
+        const [key, ...rest] = path3;
         if (rest.length === 0)
           return this.has(key);
         const node = this.get(key, true);
@@ -954,8 +954,8 @@ var require_Collection = __commonJS({
        * Sets a value in this collection. For `!!set`, `value` needs to be a
        * boolean to add/remove the item from the set.
        */
-      setIn(path2, value) {
-        const [key, ...rest] = path2;
+      setIn(path3, value) {
+        const [key, ...rest] = path3;
         if (rest.length === 0) {
           this.set(key, value);
         } else {
@@ -3470,9 +3470,9 @@ var require_Document = __commonJS({
           this.contents.add(value);
       }
       /** Adds a value to the document. */
-      addIn(path2, value) {
+      addIn(path3, value) {
         if (assertCollection(this.contents))
-          this.contents.addIn(path2, value);
+          this.contents.addIn(path3, value);
       }
       /**
        * Create a new `Alias` node, ensuring that the target `node` has the required anchor.
@@ -3547,14 +3547,14 @@ var require_Document = __commonJS({
        * Removes a value from the document.
        * @returns `true` if the item was found and removed.
        */
-      deleteIn(path2) {
-        if (Collection.isEmptyPath(path2)) {
+      deleteIn(path3) {
+        if (Collection.isEmptyPath(path3)) {
           if (this.contents == null)
             return false;
           this.contents = null;
           return true;
         }
-        return assertCollection(this.contents) ? this.contents.deleteIn(path2) : false;
+        return assertCollection(this.contents) ? this.contents.deleteIn(path3) : false;
       }
       /**
        * Returns item at `key`, or `undefined` if not found. By default unwraps
@@ -3569,10 +3569,10 @@ var require_Document = __commonJS({
        * scalar values from their surrounding node; to disable set `keepScalar` to
        * `true` (collections are always returned intact).
        */
-      getIn(path2, keepScalar) {
-        if (Collection.isEmptyPath(path2))
+      getIn(path3, keepScalar) {
+        if (Collection.isEmptyPath(path3))
           return !keepScalar && identity.isScalar(this.contents) ? this.contents.value : this.contents;
-        return identity.isCollection(this.contents) ? this.contents.getIn(path2, keepScalar) : void 0;
+        return identity.isCollection(this.contents) ? this.contents.getIn(path3, keepScalar) : void 0;
       }
       /**
        * Checks if the document includes a value with the key `key`.
@@ -3583,10 +3583,10 @@ var require_Document = __commonJS({
       /**
        * Checks if the document includes a value at `path`.
        */
-      hasIn(path2) {
-        if (Collection.isEmptyPath(path2))
+      hasIn(path3) {
+        if (Collection.isEmptyPath(path3))
           return this.contents !== void 0;
-        return identity.isCollection(this.contents) ? this.contents.hasIn(path2) : false;
+        return identity.isCollection(this.contents) ? this.contents.hasIn(path3) : false;
       }
       /**
        * Sets a value in this document. For `!!set`, `value` needs to be a
@@ -3603,13 +3603,13 @@ var require_Document = __commonJS({
        * Sets a value in this document. For `!!set`, `value` needs to be a
        * boolean to add/remove the item from the set.
        */
-      setIn(path2, value) {
-        if (Collection.isEmptyPath(path2)) {
+      setIn(path3, value) {
+        if (Collection.isEmptyPath(path3)) {
           this.contents = value;
         } else if (this.contents == null) {
-          this.contents = Collection.collectionFromPath(this.schema, Array.from(path2), value);
+          this.contents = Collection.collectionFromPath(this.schema, Array.from(path3), value);
         } else if (assertCollection(this.contents)) {
-          this.contents.setIn(path2, value);
+          this.contents.setIn(path3, value);
         }
       }
       /**
@@ -3994,10 +3994,10 @@ var require_resolve_block_map = __commonJS({
       let offset = bm.offset;
       let commentEnd = null;
       for (const collItem of bm.items) {
-        const { start, key, sep, value } = collItem;
+        const { start, key, sep: sep2, value } = collItem;
         const keyProps = resolveProps.resolveProps(start, {
           indicator: "explicit-key-ind",
-          next: key ?? sep?.[0],
+          next: key ?? sep2?.[0],
           offset,
           onError,
           parentIndent: bm.indent,
@@ -4011,7 +4011,7 @@ var require_resolve_block_map = __commonJS({
             else if ("indent" in key && key.indent !== bm.indent)
               onError(offset, "BAD_INDENT", startColMsg);
           }
-          if (!keyProps.anchor && !keyProps.tag && !sep) {
+          if (!keyProps.anchor && !keyProps.tag && !sep2) {
             commentEnd = keyProps.end;
             if (keyProps.comment) {
               if (map.comment)
@@ -4035,7 +4035,7 @@ var require_resolve_block_map = __commonJS({
         ctx.atKey = false;
         if (utilMapIncludes.mapIncludes(ctx, map.items, keyNode))
           onError(keyStart, "DUPLICATE_KEY", "Map keys must be unique");
-        const valueProps = resolveProps.resolveProps(sep ?? [], {
+        const valueProps = resolveProps.resolveProps(sep2 ?? [], {
           indicator: "map-value-ind",
           next: value,
           offset: keyNode.range[2],
@@ -4051,7 +4051,7 @@ var require_resolve_block_map = __commonJS({
             if (ctx.options.strict && keyProps.start < valueProps.found.offset - 1024)
               onError(keyNode.range, "KEY_OVER_1024_CHARS", "The : indicator must be at most 1024 chars after the start of an implicit block mapping key");
           }
-          const valueNode = value ? composeNode(ctx, value, valueProps, onError) : composeEmptyNode(ctx, offset, sep, null, valueProps, onError);
+          const valueNode = value ? composeNode(ctx, value, valueProps, onError) : composeEmptyNode(ctx, offset, sep2, null, valueProps, onError);
           if (ctx.schema.compat)
             utilFlowIndentCheck.flowIndentCheck(bm.indent, value, onError);
           offset = valueNode.range[2];
@@ -4142,7 +4142,7 @@ var require_resolve_end = __commonJS({
       let comment = "";
       if (end) {
         let hasSpace = false;
-        let sep = "";
+        let sep2 = "";
         for (const token of end) {
           const { source, type } = token;
           switch (type) {
@@ -4156,13 +4156,13 @@ var require_resolve_end = __commonJS({
               if (!comment)
                 comment = cb;
               else
-                comment += sep + cb;
-              sep = "";
+                comment += sep2 + cb;
+              sep2 = "";
               break;
             }
             case "newline":
               if (comment)
-                sep += source;
+                sep2 += source;
               hasSpace = true;
               break;
             default:
@@ -4205,18 +4205,18 @@ var require_resolve_flow_collection = __commonJS({
       let offset = fc.offset + fc.start.source.length;
       for (let i = 0; i < fc.items.length; ++i) {
         const collItem = fc.items[i];
-        const { start, key, sep, value } = collItem;
+        const { start, key, sep: sep2, value } = collItem;
         const props = resolveProps.resolveProps(start, {
           flow: fcName,
           indicator: "explicit-key-ind",
-          next: key ?? sep?.[0],
+          next: key ?? sep2?.[0],
           offset,
           onError,
           parentIndent: fc.indent,
           startOnNewline: false
         });
         if (!props.found) {
-          if (!props.anchor && !props.tag && !sep && !value) {
+          if (!props.anchor && !props.tag && !sep2 && !value) {
             if (i === 0 && props.comma)
               onError(props.comma, "UNEXPECTED_TOKEN", `Unexpected , in ${fcName}`);
             else if (i < fc.items.length - 1)
@@ -4270,8 +4270,8 @@ var require_resolve_flow_collection = __commonJS({
             }
           }
         }
-        if (!isMap && !sep && !props.found) {
-          const valueNode = value ? composeNode(ctx, value, props, onError) : composeEmptyNode(ctx, props.end, sep, null, props, onError);
+        if (!isMap && !sep2 && !props.found) {
+          const valueNode = value ? composeNode(ctx, value, props, onError) : composeEmptyNode(ctx, props.end, sep2, null, props, onError);
           coll.items.push(valueNode);
           offset = valueNode.range[2];
           if (isBlock(value))
@@ -4283,7 +4283,7 @@ var require_resolve_flow_collection = __commonJS({
           if (isBlock(key))
             onError(keyNode.range, "BLOCK_IN_FLOW", blockMsg);
           ctx.atKey = false;
-          const valueProps = resolveProps.resolveProps(sep ?? [], {
+          const valueProps = resolveProps.resolveProps(sep2 ?? [], {
             flow: fcName,
             indicator: "map-value-ind",
             next: value,
@@ -4294,8 +4294,8 @@ var require_resolve_flow_collection = __commonJS({
           });
           if (valueProps.found) {
             if (!isMap && !props.found && ctx.options.strict) {
-              if (sep)
-                for (const st of sep) {
+              if (sep2)
+                for (const st of sep2) {
                   if (st === valueProps.found)
                     break;
                   if (st.type === "newline") {
@@ -4312,7 +4312,7 @@ var require_resolve_flow_collection = __commonJS({
             else
               onError(valueProps.start, "MISSING_CHAR", `Missing , or : between ${fcName} items`);
           }
-          const valueNode = value ? composeNode(ctx, value, valueProps, onError) : valueProps.found ? composeEmptyNode(ctx, valueProps.end, sep, null, valueProps, onError) : null;
+          const valueNode = value ? composeNode(ctx, value, valueProps, onError) : valueProps.found ? composeEmptyNode(ctx, valueProps.end, sep2, null, valueProps, onError) : null;
           if (valueNode) {
             if (isBlock(value))
               onError(valueNode.range, "BLOCK_IN_FLOW", blockMsg);
@@ -4492,7 +4492,7 @@ var require_resolve_block_scalar = __commonJS({
           chompStart = i + 1;
       }
       let value = "";
-      let sep = "";
+      let sep2 = "";
       let prevMoreIndented = false;
       for (let i = 0; i < contentStart; ++i)
         value += lines[i][0].slice(trimIndent) + "\n";
@@ -4509,24 +4509,24 @@ var require_resolve_block_scalar = __commonJS({
           indent = "";
         }
         if (type === Scalar.Scalar.BLOCK_LITERAL) {
-          value += sep + indent.slice(trimIndent) + content;
-          sep = "\n";
+          value += sep2 + indent.slice(trimIndent) + content;
+          sep2 = "\n";
         } else if (indent.length > trimIndent || content[0] === "	") {
-          if (sep === " ")
-            sep = "\n";
-          else if (!prevMoreIndented && sep === "\n")
-            sep = "\n\n";
-          value += sep + indent.slice(trimIndent) + content;
-          sep = "\n";
+          if (sep2 === " ")
+            sep2 = "\n";
+          else if (!prevMoreIndented && sep2 === "\n")
+            sep2 = "\n\n";
+          value += sep2 + indent.slice(trimIndent) + content;
+          sep2 = "\n";
           prevMoreIndented = true;
         } else if (content === "") {
-          if (sep === "\n")
+          if (sep2 === "\n")
             value += "\n";
           else
-            sep = "\n";
+            sep2 = "\n";
         } else {
-          value += sep + content;
-          sep = " ";
+          value += sep2 + content;
+          sep2 = " ";
           prevMoreIndented = false;
         }
       }
@@ -4704,25 +4704,25 @@ var require_resolve_flow_scalar = __commonJS({
       if (!match)
         return source;
       let res = match[1];
-      let sep = " ";
+      let sep2 = " ";
       let pos = first.lastIndex;
       line.lastIndex = pos;
       while (match = line.exec(source)) {
         if (match[1] === "") {
-          if (sep === "\n")
-            res += sep;
+          if (sep2 === "\n")
+            res += sep2;
           else
-            sep = "\n";
+            sep2 = "\n";
         } else {
-          res += sep + match[1];
-          sep = " ";
+          res += sep2 + match[1];
+          sep2 = " ";
         }
         pos = line.lastIndex;
       }
       const last = /[ \t]*(.*)/sy;
       last.lastIndex = pos;
       match = last.exec(source);
-      return res + sep + (match?.[1] ?? "");
+      return res + sep2 + (match?.[1] ?? "");
     }
     function doubleQuotedValue(source, onError) {
       let res = "";
@@ -5532,14 +5532,14 @@ var require_cst_stringify = __commonJS({
         }
       }
     }
-    function stringifyItem({ start, key, sep, value }) {
+    function stringifyItem({ start, key, sep: sep2, value }) {
       let res = "";
       for (const st of start)
         res += st.source;
       if (key)
         res += stringifyToken(key);
-      if (sep)
-        for (const st of sep)
+      if (sep2)
+        for (const st of sep2)
           res += st.source;
       if (value)
         res += stringifyToken(value);
@@ -5564,9 +5564,9 @@ var require_cst_visit = __commonJS({
     visit.BREAK = BREAK;
     visit.SKIP = SKIP;
     visit.REMOVE = REMOVE;
-    visit.itemAtPath = (cst, path2) => {
+    visit.itemAtPath = (cst, path3) => {
       let item = cst;
-      for (const [field, index] of path2) {
+      for (const [field, index] of path3) {
         const tok = item?.[field];
         if (tok && "items" in tok) {
           item = tok.items[index];
@@ -5575,23 +5575,23 @@ var require_cst_visit = __commonJS({
       }
       return item;
     };
-    visit.parentCollection = (cst, path2) => {
-      const parent = visit.itemAtPath(cst, path2.slice(0, -1));
-      const field = path2[path2.length - 1][0];
+    visit.parentCollection = (cst, path3) => {
+      const parent = visit.itemAtPath(cst, path3.slice(0, -1));
+      const field = path3[path3.length - 1][0];
       const coll = parent?.[field];
       if (coll && "items" in coll)
         return coll;
       throw new Error("Parent collection not found");
     };
-    function _visit(path2, item, visitor) {
-      let ctrl = visitor(item, path2);
+    function _visit(path3, item, visitor) {
+      let ctrl = visitor(item, path3);
       if (typeof ctrl === "symbol")
         return ctrl;
       for (const field of ["key", "value"]) {
         const token = item[field];
         if (token && "items" in token) {
           for (let i = 0; i < token.items.length; ++i) {
-            const ci = _visit(Object.freeze(path2.concat([[field, i]])), token.items[i], visitor);
+            const ci = _visit(Object.freeze(path3.concat([[field, i]])), token.items[i], visitor);
             if (typeof ci === "number")
               i = ci - 1;
             else if (ci === BREAK)
@@ -5602,10 +5602,10 @@ var require_cst_visit = __commonJS({
             }
           }
           if (typeof ctrl === "function" && field === "key")
-            ctrl = ctrl(item, path2);
+            ctrl = ctrl(item, path3);
         }
       }
-      return typeof ctrl === "function" ? ctrl(item, path2) : ctrl;
+      return typeof ctrl === "function" ? ctrl(item, path3) : ctrl;
     }
     exports.visit = visit;
   }
@@ -6699,18 +6699,18 @@ var require_parser = __commonJS({
         if (this.type === "map-value-ind") {
           const prev = getPrevProps(this.peek(2));
           const start = getFirstKeyStartProps(prev);
-          let sep;
+          let sep2;
           if (scalar.end) {
-            sep = scalar.end;
-            sep.push(this.sourceToken);
+            sep2 = scalar.end;
+            sep2.push(this.sourceToken);
             delete scalar.end;
           } else
-            sep = [this.sourceToken];
+            sep2 = [this.sourceToken];
           const map = {
             type: "block-map",
             offset: scalar.offset,
             indent: scalar.indent,
-            items: [{ start, key: scalar, sep }]
+            items: [{ start, key: scalar, sep: sep2 }]
           };
           this.onKeyLine = true;
           this.stack[this.stack.length - 1] = map;
@@ -6862,15 +6862,15 @@ var require_parser = __commonJS({
                 } else if (isFlowToken(it.key) && !includesToken(it.sep, "newline")) {
                   const start2 = getFirstKeyStartProps(it.start);
                   const key = it.key;
-                  const sep = it.sep;
-                  sep.push(this.sourceToken);
+                  const sep2 = it.sep;
+                  sep2.push(this.sourceToken);
                   delete it.key;
                   delete it.sep;
                   this.stack.push({
                     type: "block-map",
                     offset: this.offset,
                     indent: this.indent,
-                    items: [{ start: start2, key, sep }]
+                    items: [{ start: start2, key, sep: sep2 }]
                   });
                 } else if (start.length > 0) {
                   it.sep = it.sep.concat(start, this.sourceToken);
@@ -6899,14 +6899,14 @@ var require_parser = __commonJS({
             case "scalar":
             case "single-quoted-scalar":
             case "double-quoted-scalar": {
-              const fs2 = this.flowScalar(this.type);
+              const fs3 = this.flowScalar(this.type);
               if (atNextItem || it.value) {
-                map.items.push({ start, key: fs2, sep: [] });
+                map.items.push({ start, key: fs3, sep: [] });
                 this.onKeyLine = true;
               } else if (it.sep) {
-                this.stack.push(fs2);
+                this.stack.push(fs3);
               } else {
-                Object.assign(it, { key: fs2, sep: [] });
+                Object.assign(it, { key: fs3, sep: [] });
                 this.onKeyLine = true;
               }
               return;
@@ -7034,13 +7034,13 @@ var require_parser = __commonJS({
             case "scalar":
             case "single-quoted-scalar":
             case "double-quoted-scalar": {
-              const fs2 = this.flowScalar(this.type);
+              const fs3 = this.flowScalar(this.type);
               if (!it || it.value)
-                fc.items.push({ start: [], key: fs2, sep: [] });
+                fc.items.push({ start: [], key: fs3, sep: [] });
               else if (it.sep)
-                this.stack.push(fs2);
+                this.stack.push(fs3);
               else
-                Object.assign(it, { key: fs2, sep: [] });
+                Object.assign(it, { key: fs3, sep: [] });
               return;
             }
             case "flow-map-end":
@@ -7064,13 +7064,13 @@ var require_parser = __commonJS({
             const prev = getPrevProps(parent);
             const start = getFirstKeyStartProps(prev);
             fixFlowSeqItems(fc);
-            const sep = fc.end.splice(1, fc.end.length);
-            sep.push(this.sourceToken);
+            const sep2 = fc.end.splice(1, fc.end.length);
+            sep2.push(this.sourceToken);
             const map = {
               type: "block-map",
               offset: fc.offset,
               indent: fc.indent,
-              items: [{ start, key: fc, sep }]
+              items: [{ start, key: fc, sep: sep2 }]
             };
             this.onKeyLine = true;
             this.stack[this.stack.length - 1] = map;
@@ -7350,12 +7350,12 @@ var require_dist = __commonJS({
 // src/agentry.ts
 var import_yaml2 = __toESM(require_dist(), 1);
 import { tool } from "@opencode-ai/plugin";
-import * as fs from "node:fs";
+import * as fs2 from "node:fs";
 import * as os from "node:os";
-import * as path from "node:path";
+import * as path2 from "node:path";
 import * as http from "node:http";
 import { randomUUID } from "node:crypto";
-import { exec, spawn } from "node:child_process";
+import { exec, spawn as spawn2 } from "node:child_process";
 
 // ../core/src/triggers.ts
 var TRIGGER_KINDS = ["file", "schedule", "web", "mail", "git"];
@@ -7486,9 +7486,146 @@ var logFileName = (nodeId) => `${nodeId}.log.md`;
 // ../core/src/serialize.ts
 var import_yaml = __toESM(require_dist(), 1);
 
+// ../core/src/tool.ts
+var TOOL_KINDS = ["http", "read_file", "write_file", "script"];
+var HTTP_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE"];
+var HTTP_TIMEOUT_S = 30;
+var SCRIPT_TIMEOUT_S = 120;
+var toolAgentLabel = (spec) => `tool:${spec?.kind ?? "unknown"}`;
+var isRecord2 = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
+var isPositive = (value) => typeof value === "number" && Number.isFinite(value) && value > 0;
+function checkToolSpec(id, raw) {
+  const at = `agents.${id}.tool`;
+  if (!isRecord2(raw)) return [`${at}: required object for a tool node`];
+  const errors = [];
+  const kind = raw.kind;
+  if (typeof kind !== "string" || !TOOL_KINDS.includes(kind)) {
+    return [`${at}.kind: expected one of ${TOOL_KINDS.join(", ")}, got ${JSON.stringify(kind)}`];
+  }
+  const needString = (field) => {
+    if (typeof raw[field] !== "string" || !raw[field].trim()) errors.push(`${at}.${field}: required string`);
+  };
+  const checkTimeout = () => {
+    if (raw.timeout_s !== void 0 && !isPositive(raw.timeout_s)) errors.push(`${at}.timeout_s: expected a positive number`);
+  };
+  switch (kind) {
+    case "http":
+      needString("url");
+      if (raw.method !== void 0 && !HTTP_METHODS.includes(String(raw.method))) {
+        errors.push(`${at}.method: expected one of ${HTTP_METHODS.join(", ")}, got ${JSON.stringify(raw.method)}`);
+      }
+      if (raw.headers !== void 0 && (!isRecord2(raw.headers) || Object.values(raw.headers).some((v) => typeof v !== "string"))) {
+        errors.push(`${at}.headers: expected an object of string values`);
+      }
+      if (raw.body !== void 0 && typeof raw.body !== "string" && !isRecord2(raw.body)) errors.push(`${at}.body: expected a string or an object`);
+      checkTimeout();
+      break;
+    case "read_file":
+      needString("path");
+      break;
+    case "write_file":
+      needString("path");
+      if (raw.content !== void 0 && typeof raw.content !== "string") errors.push(`${at}.content: expected a string`);
+      if (raw.mode !== void 0 && raw.mode !== "overwrite" && raw.mode !== "append") errors.push(`${at}.mode: expected "overwrite" or "append"`);
+      break;
+    case "script": {
+      const cmd = raw.command;
+      const okList = Array.isArray(cmd) && cmd.length > 0 && cmd.every((a) => typeof a === "string" || typeof a === "number");
+      if (!okList && (typeof cmd !== "string" || !cmd.trim())) errors.push(`${at}.command: required string or non-empty string[]`);
+      if (raw.cwd !== void 0 && typeof raw.cwd !== "string") errors.push(`${at}.cwd: expected a string`);
+      checkTimeout();
+      break;
+    }
+  }
+  return errors;
+}
+var REF_RE = /\{([A-Za-z_][\w-]*)((?:\.[\w-]+)*)\}/g;
+function templateRefs(template) {
+  const refs = [];
+  for (const m of template.matchAll(REF_RE)) {
+    const root = m[1] ?? "";
+    const path3 = (m[2] ?? "").split(".").filter(Boolean);
+    refs.push({ raw: m[0], root, path: path3 });
+  }
+  return refs;
+}
+var scalarText = (value) => {
+  if (value === void 0 || value === null) return void 0;
+  if (typeof value === "string") return value;
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  return JSON.stringify(value);
+};
+function lookupPath(text, path3) {
+  let current = extractJson(text);
+  if (current === null) {
+    try {
+      current = JSON.parse(text);
+    } catch {
+      return void 0;
+    }
+  }
+  for (const key of path3) {
+    if (Array.isArray(current)) current = current[Number(key)];
+    else if (isRecord2(current)) current = current[key];
+    else return void 0;
+  }
+  return current;
+}
+function renderTemplate(template, scope, encode = false) {
+  const notices = [];
+  const resolve3 = (ref) => {
+    const inScope = ref.root === "input" || scope.sources.includes(ref.root);
+    if (!inScope) return void 0;
+    const source = ref.root === "input" ? scope.input : scope.outputs.get(ref.root);
+    const value = source === void 0 ? void 0 : ref.path.length === 0 ? source : scalarText(lookupPath(source, ref.path));
+    if (value === void 0) {
+      notices.push(`${ref.raw} has no value — rendered as ""`);
+      return "";
+    }
+    return value;
+  };
+  const text = template.replace(REF_RE, (raw, root, rest) => {
+    const value = resolve3({ raw, root, path: rest.split(".").filter(Boolean) });
+    if (value === void 0) return raw;
+    return encode ? encodeURIComponent(value) : value;
+  });
+  return { text, notices };
+}
+function renderUrl(url, scope) {
+  const trimmed = url.trim();
+  const refs = templateRefs(trimmed);
+  const whole = refs.length === 1 && refs[0]?.raw === trimmed;
+  return renderTemplate(trimmed, scope, !whole);
+}
+function toolTemplateFields(spec) {
+  const fields = [];
+  switch (spec.kind) {
+    case "http":
+      fields.push({ field: "url", text: spec.url });
+      for (const [key, value] of Object.entries(spec.headers ?? {})) fields.push({ field: `headers.${key}`, text: value });
+      if (typeof spec.body === "string") fields.push({ field: "body", text: spec.body });
+      else if (spec.body) {
+        for (const [key, value] of Object.entries(spec.body)) if (typeof value === "string") fields.push({ field: `body.${key}`, text: value });
+      }
+      break;
+    case "read_file":
+      fields.push({ field: "path", text: spec.path });
+      break;
+    case "write_file":
+      fields.push({ field: "path", text: spec.path });
+      if (spec.content !== void 0) fields.push({ field: "content", text: spec.content });
+      break;
+    case "script":
+      if (Array.isArray(spec.command)) spec.command.forEach((arg, i) => fields.push({ field: `command[${i}]`, text: String(arg) }));
+      if (spec.cwd !== void 0) fields.push({ field: "cwd", text: spec.cwd });
+      break;
+  }
+  return fields;
+}
+
 // ../core/src/runtime.ts
 var fromList = (from) => from === void 0 ? [] : Array.isArray(from) ? from : [from];
-var isRecord2 = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
+var isRecord3 = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
 function matchesCondition(output, cond) {
   const lower = output.toLowerCase().trim();
   if (cond.contains && !lower.includes(String(cond.contains).toLowerCase())) return false;
@@ -7536,9 +7673,11 @@ function strictJsonNodes(workflow) {
   for (const [id, def] of Object.entries(workflow.agents)) {
     if (def.type === "branch" && def.branch_on) strict.add(id);
     const select = def.input?.select;
-    if (!isRecord2(select)) continue;
+    if (!isRecord3(select)) continue;
     const sources = inputSources(def, parents.get(id) ?? []);
-    for (const upstream of Object.keys(select)) if (sources.includes(upstream)) strict.add(upstream);
+    for (const upstream of Object.keys(select)) {
+      if (sources.includes(upstream) && workflow.agents[upstream]?.type !== "tool") strict.add(upstream);
+    }
   }
   return strict;
 }
@@ -7549,7 +7688,7 @@ function stripJsonFences(text) {
 function extractJson(text) {
   try {
     const parsed = JSON.parse(stripJsonFences(text));
-    if (isRecord2(parsed)) return parsed;
+    if (isRecord3(parsed)) return parsed;
   } catch {
   }
   const start = text.indexOf("{");
@@ -7572,7 +7711,7 @@ function extractJson(text) {
       if (depth !== 0) continue;
       try {
         const parsed = JSON.parse(text.slice(start, i + 1));
-        if (isRecord2(parsed)) return parsed;
+        if (isRecord3(parsed)) return parsed;
       } catch {
       }
       return null;
@@ -7597,25 +7736,26 @@ function sliceUpstream(text, fields) {
 }
 function checkRunnable(raw) {
   const errors = [];
-  if (!isRecord2(raw)) return { ok: false, errors: ["Workflow must be an object"] };
+  if (!isRecord3(raw)) return { ok: false, errors: ["Workflow must be an object"] };
   if (typeof raw.introduction !== "string") errors.push("missing introduction");
   if (typeof raw.type !== "string") errors.push("missing type");
-  if (!isRecord2(raw.input)) errors.push("missing input");
-  if (!isRecord2(raw.output)) errors.push("missing output");
-  const agents = isRecord2(raw.agents) ? raw.agents : null;
+  if (!isRecord3(raw.input)) errors.push("missing input");
+  if (!isRecord3(raw.output)) errors.push("missing output");
+  const agents = isRecord3(raw.agents) ? raw.agents : null;
   if (!agents) errors.push("missing agents");
   const ids = new Set(agents ? Object.keys(agents) : []);
   for (const [id, value] of Object.entries(agents ?? {})) {
-    if (!isRecord2(value)) {
+    if (!isRecord3(value)) {
       errors.push(`agents.${id}: not an object`);
       continue;
     }
-    if (value.type !== "sub-workflow") {
+    if (value.type === "tool") errors.push(...checkToolSpec(id, value.tool));
+    else if (value.type !== "sub-workflow") {
       if (typeof value.prompt !== "string") errors.push(`agents.${id}: missing prompt`);
-      if (!isRecord2(value.agent_mapping)) errors.push(`agents.${id}: missing agent_mapping`);
+      if (!isRecord3(value.agent_mapping)) errors.push(`agents.${id}: missing agent_mapping`);
       else if (typeof value.agent_mapping.opencode !== "string") errors.push(`agents.${id}.agent_mapping: missing opencode`);
     }
-    const input = isRecord2(value.input) ? value.input : null;
+    const input = isRecord3(value.input) ? value.input : null;
     if (input?.from !== void 0) {
       for (const ref of Array.isArray(input.from) ? input.from : [input.from]) {
         if (typeof ref !== "string") errors.push(`agents.${id}.input.from: expected string or string[], got ${typeof ref}`);
@@ -7626,7 +7766,7 @@ function checkRunnable(raw) {
       errors.push(`agents.${id}.input.join: expected "all" or "any", got ${JSON.stringify(input.join)}`);
     }
     if (input?.select !== void 0) {
-      if (!isRecord2(input.select)) errors.push(`agents.${id}.input.select: expected an object of upstream id -> field list`);
+      if (!isRecord3(input.select)) errors.push(`agents.${id}.input.select: expected an object of upstream id -> field list`);
       else {
         for (const [upstream, fields] of Object.entries(input.select)) {
           if (!Array.isArray(fields) || fields.some((field) => typeof field !== "string")) {
@@ -7635,15 +7775,15 @@ function checkRunnable(raw) {
         }
       }
     }
-    if (isRecord2(value.trigger)) {
+    if (isRecord3(value.trigger)) {
       const { when, loop } = value.trigger;
       if (when !== void 0) {
-        if (!isRecord2(when)) errors.push(`agents.${id}.trigger.when: expected object`);
+        if (!isRecord3(when)) errors.push(`agents.${id}.trigger.when: expected object`);
         else if (typeof when.from !== "string") errors.push(`agents.${id}.trigger.when.from: required string`);
         else if (!ids.has(when.from)) errors.push(`agents.${id}.trigger.when.from: references unknown agent "${when.from}"`);
       }
       if (loop !== void 0) {
-        if (!isRecord2(loop)) errors.push(`agents.${id}.trigger.loop: expected object`);
+        if (!isRecord3(loop)) errors.push(`agents.${id}.trigger.loop: expected object`);
         else if (typeof loop.max !== "number" || loop.max < 1) errors.push(`agents.${id}.trigger.loop.max: required positive number`);
       }
     }
@@ -7651,7 +7791,7 @@ function checkRunnable(raw) {
       if (!Array.isArray(value.routes)) errors.push(`agents.${id}.routes: expected a list`);
       else {
         value.routes.forEach((route, index) => {
-          if (!isRecord2(route) || typeof route.to !== "string") errors.push(`agents.${id}.routes[${index}].to: required string`);
+          if (!isRecord3(route) || typeof route.to !== "string") errors.push(`agents.${id}.routes[${index}].to: required string`);
           else if (!ids.has(route.to)) errors.push(`agents.${id}.routes[${index}].to: references unknown agent "${route.to}"`);
         });
       }
@@ -7669,17 +7809,43 @@ function checkRunnable(raw) {
 
 // ../core/src/validate.ts
 var asList = (from) => from === void 0 ? [] : Array.isArray(from) ? from : [from];
+function toolIssues(id, def, sources) {
+  const issues = [];
+  if (!def.tool) {
+    issues.push({ severity: "error", code: "tool-missing", nodeId: id, field: "tool", message: `"${id}" is a tool node but has no tool block.` });
+    return issues;
+  }
+  for (const message of checkToolSpec(id, def.tool)) {
+    issues.push({ severity: "error", code: "tool-invalid", nodeId: id, field: "tool", message });
+  }
+  if (issues.length) return issues;
+  for (const { field, text } of toolTemplateFields(def.tool)) {
+    for (const ref of templateRefs(text)) {
+      if (ref.root === "input" || sources.includes(ref.root)) continue;
+      issues.push({
+        severity: "warning",
+        code: "template-unknown-source",
+        nodeId: id,
+        field,
+        message: `"${id}" references ${ref.raw} in tool.${field}, but "${ref.root}" is not an upstream of this node (nor "input") — it is left as written.`
+      });
+    }
+  }
+  return issues;
+}
 function validateWorkflow(workflow) {
   const issues = [];
   const agents = workflow.agents ?? {};
   const ids = Object.keys(agents);
   const has = (id) => Boolean(agents[id]);
   const fieldsOf = (id) => Object.keys(agents[id]?.output?.schema ?? {});
+  const parents = branchParents({ agents });
   const consumed = /* @__PURE__ */ new Set();
   const fed = /* @__PURE__ */ new Set();
   for (const id of ids) {
     const def = agents[id];
     if (!def) continue;
+    if (def.type === "tool") issues.push(...toolIssues(id, def, inputSources(def, parents.get(id) ?? [])));
     for (const from of asList(def.input?.from)) {
       if (has(from)) {
         consumed.add(from);
@@ -7756,14 +7922,14 @@ function validateWorkflow(workflow) {
         });
       }
     }
-    const join2 = def.input?.join;
-    if (join2 !== void 0 && join2 !== "all" && join2 !== "any") {
+    const join3 = def.input?.join;
+    if (join3 !== void 0 && join3 !== "all" && join3 !== "any") {
       issues.push({
         severity: "error",
         code: "join-invalid",
         nodeId: id,
         field: "join",
-        message: `"${id}" has input.join "${String(join2)}"; expected "all" or "any".`
+        message: `"${id}" has input.join "${String(join3)}"; expected "all" or "any".`
       });
     }
     for (const [upstream, kept] of Object.entries(def.input?.select ?? {})) {
@@ -8080,6 +8246,7 @@ var PANEL_TOKENS_CSS = `:root {
   --agentry-color-type-input: #3fb950;
   --agentry-color-type-output: #f778ba;
   --agentry-color-type-documenter: color-mix(in srgb, var(--agentry-color-type-reporter) 60%, var(--agentry-color-type-subworkflow));
+  --agentry-color-type-tool: color-mix(in srgb, var(--agentry-color-type-straight) 45%, var(--agentry-color-text-secondary));
   --agentry-state-done: #3fb950;
   --agentry-state-running: #e3b341;
   --agentry-state-pending: #6e7681;
@@ -8553,6 +8720,231 @@ var PANEL_TOKENS_CSS = `:root {
   --agentry-color-minimap-label: var(--agentry-color-text-primary);
 }`;
 
+// src/tools.ts
+import * as fs from "node:fs";
+import * as path from "node:path";
+import { spawn } from "node:child_process";
+var READ_LIMIT = 2 * 1024 * 1024;
+var HTTP_BODY_LIMIT = 256 * 1024;
+var PIPE_LIMIT = 64 * 1024;
+var ToolError = class extends Error {
+  constructor(message, resolved = [], notices = []) {
+    super(message);
+    this.resolved = resolved;
+    this.notices = notices;
+    this.name = "ToolError";
+  }
+};
+var isObj = (v) => typeof v === "object" && v !== null && !Array.isArray(v);
+var errorMessage = (err) => err instanceof Error ? err.message : String(err);
+function resolveInside(projectDir, rel, what) {
+  const root = fs.realpathSync.native(projectDir);
+  const abs = path.resolve(root, rel);
+  const escapes = (candidate) => {
+    const between = path.relative(root, candidate);
+    return between.startsWith("..") || path.isAbsolute(between);
+  };
+  if (escapes(abs)) throw new ToolError(`${what} "${rel}" escapes the project directory`);
+  let probe = abs;
+  while (!fs.existsSync(probe)) {
+    const parent = path.dirname(probe);
+    if (parent === probe) break;
+    probe = parent;
+  }
+  if (escapes(fs.realpathSync.native(probe))) throw new ToolError(`${what} "${rel}" resolves outside the project directory (symlink)`);
+  return abs;
+}
+var clipPipe = (text, limit) => text.length > limit ? `${text.slice(0, limit)}
+…[truncated: ${text.length - limit} more characters]` : text;
+function render(text, scope, notices) {
+  const out = renderTemplate(text, scope);
+  notices.push(...out.notices);
+  return out.text;
+}
+async function runHttp(spec, scope) {
+  const notices = [];
+  const url = renderUrl(spec.url, scope);
+  notices.push(...url.notices);
+  const method = spec.method ?? "GET";
+  const headers = {};
+  for (const [key, value] of Object.entries(spec.headers ?? {})) headers[key] = render(value, scope, notices);
+  let body;
+  if (typeof spec.body === "string") body = render(spec.body, scope, notices);
+  else if (spec.body) {
+    const mapped = {};
+    for (const [key, value] of Object.entries(spec.body)) mapped[key] = typeof value === "string" ? render(value, scope, notices) : value;
+    body = JSON.stringify(mapped);
+    if (!Object.keys(headers).some((h) => h.toLowerCase() === "content-type")) headers["Content-Type"] = "application/json";
+  }
+  const resolved = [`${method} ${url.text}`, ...Object.entries(headers).map(([k, v]) => `${k}: ${v}`), ...body !== void 0 ? ["", body] : []];
+  const timeoutMs = (spec.timeout_s ?? HTTP_TIMEOUT_S) * 1e3;
+  let response;
+  try {
+    response = await fetch(url.text, { method, headers, body, signal: AbortSignal.timeout(timeoutMs), redirect: "follow" });
+  } catch (err) {
+    const reason = err instanceof Error && err.name === "TimeoutError" ? `timed out after ${timeoutMs / 1e3} s` : errorMessage(err);
+    throw new ToolError(`${method} ${url.text} failed: ${reason}`, resolved, notices);
+  }
+  const contentType = response.headers.get("content-type") ?? "";
+  const text = await response.text();
+  let parsed = text;
+  if (/json/i.test(contentType)) {
+    try {
+      parsed = JSON.parse(text);
+    } catch {
+      parsed = text;
+    }
+  }
+  if (typeof parsed === "string") parsed = clipPipe(parsed, HTTP_BODY_LIMIT);
+  const output = JSON.stringify({ status: response.status, ok: response.ok, content_type: contentType, body: parsed });
+  if (!response.ok && !spec.allow_failure) throw new ToolError(`${method} ${url.text} answered ${response.status} ${response.statusText}`.trim(), [...resolved, "", `→ ${response.status}`], notices);
+  return { output, resolved: [...resolved, "", `→ ${response.status} ${contentType}`.trim()], notices };
+}
+function runReadFile(spec, scope, projectDir) {
+  const notices = [];
+  const rel = render(spec.path, scope, notices);
+  const abs = resolveInside(projectDir, rel, "path");
+  const resolved = [`read ${abs}`];
+  let stat;
+  try {
+    stat = fs.statSync(abs);
+  } catch {
+    throw new ToolError(`path "${rel}" does not exist`, resolved, notices);
+  }
+  if (!stat.isFile()) throw new ToolError(`path "${rel}" is not a file`, resolved, notices);
+  if (stat.size > READ_LIMIT) throw new ToolError(`path "${rel}" is ${stat.size} bytes; read_file reads at most ${READ_LIMIT}`, resolved, notices);
+  const content = fs.readFileSync(abs, "utf-8");
+  const record = { path: path.relative(projectDir, abs).split(path.sep).join("/"), bytes: stat.size, content };
+  try {
+    record.json = JSON.parse(content);
+  } catch {
+  }
+  return { output: JSON.stringify(record), resolved, notices };
+}
+function runWriteFile(spec, scope, projectDir) {
+  const notices = [];
+  const rel = render(spec.path, scope, notices);
+  const abs = resolveInside(projectDir, rel, "path");
+  const first = scope.sources[0];
+  const content = spec.content !== void 0 ? render(spec.content, scope, notices) : (first !== void 0 ? scope.outputs.get(first) : void 0) ?? scope.input ?? "";
+  const mode = spec.mode ?? "overwrite";
+  fs.mkdirSync(path.dirname(abs), { recursive: true });
+  if (mode === "append") fs.appendFileSync(abs, content);
+  else fs.writeFileSync(abs, content);
+  const bytes = Buffer.byteLength(content);
+  return {
+    output: JSON.stringify({ path: path.relative(projectDir, abs).split(path.sep).join("/"), bytes, mode }),
+    resolved: [`${mode} ${abs} (${bytes} bytes)`],
+    notices
+  };
+}
+function killTree(child) {
+  if (child.pid === void 0) return;
+  if (process.platform === "win32") {
+    spawn("taskkill", ["/T", "/F", "/PID", String(child.pid)], { stdio: "ignore", windowsHide: true }).on("error", () => child.kill());
+    return;
+  }
+  try {
+    process.kill(-child.pid, "SIGKILL");
+  } catch {
+    child.kill("SIGKILL");
+  }
+}
+function collect(stream, sink) {
+  stream?.setEncoding("utf-8");
+  stream?.on("data", (chunk) => {
+    if (sink.text.length <= PIPE_LIMIT * 2) sink.text += chunk;
+  });
+}
+function scriptStdin(scope) {
+  const upstream = {};
+  for (const id of scope.sources) {
+    const text = scope.outputs.get(id);
+    if (text === void 0) continue;
+    upstream[id] = extractJson(text) ?? text;
+  }
+  return JSON.stringify({ input: scope.input ?? null, upstream });
+}
+function runScript(run, spec) {
+  const { scope, projectDir, runDir, nodeId } = run;
+  const notices = [];
+  const cwd = spec.cwd ? resolveInside(projectDir, render(spec.cwd, scope, notices), "cwd") : projectDir;
+  const stdin = scriptStdin(scope);
+  const inputFile = path.join(runDir, `${nodeId}.input.json`);
+  fs.writeFileSync(inputFile, stdin);
+  const env = { ...process.env, AGENTRY_INPUT_FILE: inputFile, AGENTRY_RUN_DIR: runDir };
+  const timeoutMs = (spec.timeout_s ?? SCRIPT_TIMEOUT_S) * 1e3;
+  const common = { cwd, env, stdio: "pipe", windowsHide: true, detached: process.platform !== "win32" };
+  let child;
+  let resolved;
+  if (Array.isArray(spec.command)) {
+    const argv = spec.command.map((arg) => render(String(arg), scope, notices));
+    const [exe, ...args] = argv;
+    if (exe === void 0) throw new ToolError("script.command is empty", [], notices);
+    resolved = [`$ ${argv.map((a) => /\s/.test(a) ? JSON.stringify(a) : a).join(" ")}`, `cwd: ${cwd}`];
+    child = spawn(exe, args, common);
+  } else {
+    resolved = [`$ ${spec.command}`, `cwd: ${cwd}`, "(shell command — not templated)"];
+    child = spawn(spec.command, { ...common, shell: true });
+  }
+  return new Promise((resolve3, reject) => {
+    const out = { text: "" };
+    const err = { text: "" };
+    collect(child.stdout, out);
+    collect(child.stderr, err);
+    let timedOut = false;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      killTree(child);
+    }, timeoutMs);
+    child.on("error", (spawnErr) => {
+      clearTimeout(timer);
+      reject(new ToolError(`script failed to start: ${spawnErr.message}`, resolved, notices));
+    });
+    child.on("close", (code, signal) => {
+      clearTimeout(timer);
+      const stdout = clipPipe(out.text, PIPE_LIMIT);
+      const stderr = clipPipe(err.text, PIPE_LIMIT);
+      if (timedOut) {
+        reject(new ToolError(`script timed out after ${timeoutMs / 1e3} s (process tree killed)`, [...resolved, "", `stderr: ${stderr}`], notices));
+        return;
+      }
+      const exitCode = code ?? -1;
+      const record = { exit_code: exitCode, stdout, stderr };
+      let parsed;
+      try {
+        parsed = JSON.parse(out.text.trim());
+      } catch {
+        parsed = void 0;
+      }
+      if (isObj(parsed)) record.result = parsed;
+      const output = JSON.stringify(record);
+      const summary = [...resolved, "", `→ exit ${exitCode}${signal ? ` (${signal})` : ""}`];
+      if (exitCode !== 0 && !spec.allow_failure) {
+        reject(new ToolError(`script exited with ${exitCode}${signal ? ` (${signal})` : ""}${stderr ? `: ${stderr.trim().split("\n").slice(-3).join(" | ")}` : ""}`, summary, notices));
+        return;
+      }
+      resolve3({ output, resolved: summary, notices });
+    });
+    child.stdin?.on("error", () => {
+    });
+    child.stdin?.end(stdin);
+  });
+}
+async function runTool(run) {
+  const { spec, scope, projectDir } = run;
+  switch (spec.kind) {
+    case "http":
+      return runHttp(spec, scope);
+    case "read_file":
+      return runReadFile(spec, scope, projectDir);
+    case "write_file":
+      return runWriteFile(spec, scope, projectDir);
+    case "script":
+      return runScript(run, spec);
+  }
+}
+
 // src/agentry.ts
 var PANEL_FILE = ".agentry/panel.json";
 var REPORT_FILE = "log.md";
@@ -8560,11 +8952,11 @@ function extractText(parts) {
   if (!Array.isArray(parts)) return "";
   return parts.filter((p) => typeof p === "object" && p !== null && "type" in p).filter((p) => p.type === "text").map((p) => p.text ?? p.content ?? "").join("\n").trim();
 }
-function isObj(v) {
+function isObj2(v) {
   return typeof v === "object" && v !== null && !Array.isArray(v);
 }
 var ts = () => (/* @__PURE__ */ new Date()).toISOString();
-var errorMessage = (err) => err instanceof Error ? err.message : String(err);
+var errorMessage2 = (err) => err instanceof Error ? err.message : String(err);
 var fmtMs = (ms) => ms < 1e3 ? `${ms} ms` : `${(ms / 1e3).toFixed(1)} s`;
 var clip = (text, max) => text.length > max ? `${text.slice(0, max)}…` : text;
 var host = null;
@@ -8608,24 +9000,24 @@ async function resolveAgent(client, target) {
   throw new Error(`Agent "${target}" not available. Available: [${avail}]`);
 }
 function loadCheckpoint(runDir) {
-  const p = path.join(runDir, CHECKPOINT_FILE);
-  if (!fs.existsSync(p)) return null;
+  const p = path2.join(runDir, CHECKPOINT_FILE);
+  if (!fs2.existsSync(p)) return null;
   try {
-    const parsed = JSON.parse(fs.readFileSync(p, "utf-8"));
-    return isObj(parsed) && Array.isArray(parsed.completed) ? parsed : null;
+    const parsed = JSON.parse(fs2.readFileSync(p, "utf-8"));
+    return isObj2(parsed) && Array.isArray(parsed.completed) ? parsed : null;
   } catch {
     return null;
   }
 }
 function saveCheckpoint(runDir, cp) {
-  fs.writeFileSync(path.join(runDir, CHECKPOINT_FILE), JSON.stringify(cp, null, 2));
+  fs2.writeFileSync(path2.join(runDir, CHECKPOINT_FILE), JSON.stringify(cp, null, 2));
 }
 function validateOutput(nodeId, outputText, schema) {
   if (!schema || Object.keys(schema).length === 0) return [];
   const warnings = [];
   try {
     const parsed = JSON.parse(stripJsonFences(outputText));
-    if (!isObj(parsed)) {
+    if (!isObj2(parsed)) {
       warnings.push(`${nodeId}: output is not a JSON object`);
       return warnings;
     }
@@ -8712,20 +9104,20 @@ function setPanelTheme(id) {
 function writePanelFile(directory, runId) {
   if (!panelPort) return;
   try {
-    panelFilePath = path.join(directory, PANEL_FILE);
-    fs.mkdirSync(path.dirname(panelFilePath), { recursive: true });
+    panelFilePath = path2.join(directory, PANEL_FILE);
+    fs2.mkdirSync(path2.dirname(panelFilePath), { recursive: true });
     const tmp = `${panelFilePath}.${process.pid}.tmp`;
-    fs.writeFileSync(tmp, JSON.stringify({ port: panelPort, runId, pid: process.pid, startedAt: ts(), token: runToken }, null, 2));
-    fs.renameSync(tmp, panelFilePath);
+    fs2.writeFileSync(tmp, JSON.stringify({ port: panelPort, runId, pid: process.pid, startedAt: ts(), token: runToken }, null, 2));
+    fs2.renameSync(tmp, panelFilePath);
   } catch (err) {
-    log("warn", `failed to write ${PANEL_FILE}: ${errorMessage(err)}`);
+    log("warn", `failed to write ${PANEL_FILE}: ${errorMessage2(err)}`);
   }
 }
 function removePanelFile() {
   try {
     if (!panelFilePath) return;
-    const rec = JSON.parse(fs.readFileSync(panelFilePath, "utf-8"));
-    if (isObj(rec) && rec.pid === process.pid) fs.unlinkSync(panelFilePath);
+    const rec = JSON.parse(fs2.readFileSync(panelFilePath, "utf-8"));
+    if (isObj2(rec) && rec.pid === process.pid) fs2.unlinkSync(panelFilePath);
   } catch {
   }
 }
@@ -8751,16 +9143,16 @@ async function shutdownPanel() {
   panelPort = 0;
   if (!srv) return;
   srv.closeAllConnections();
-  await new Promise((resolve2) => srv.close(() => resolve2()));
+  await new Promise((resolve3) => srv.close(() => resolve3()));
 }
 function loadDesignTokens(directory) {
   const candidates = [
-    path.join(directory, "packages", "design", "src", "tokens.css"),
-    path.join(directory, "..", "packages", "design", "src", "tokens.css")
+    path2.join(directory, "packages", "design", "src", "tokens.css"),
+    path2.join(directory, "..", "packages", "design", "src", "tokens.css")
   ];
   for (const p of candidates) {
     try {
-      if (fs.existsSync(p)) return fs.readFileSync(p, "utf-8");
+      if (fs2.existsSync(p)) return fs2.readFileSync(p, "utf-8");
     } catch {
     }
   }
@@ -8985,7 +9377,7 @@ var LOOPBACK_ORIGIN = /^https?:\/\/(?:localhost|127\.0\.0\.1|\[::1\])(?::\d{1,5}
 var LOOPBACK_HOST = /^(?:localhost|127\.0\.0\.1|\[::1\])(?::\d{1,5})?$/i;
 var isAllowedOrigin = (origin) => TAURI_ORIGINS.has(origin.toLowerCase()) || LOOPBACK_ORIGIN.test(origin);
 function readBody(req, limit = 4096) {
-  return new Promise((resolve2, reject) => {
+  return new Promise((resolve3, reject) => {
     let body = "";
     req.setEncoding("utf8");
     req.on("data", (chunk) => {
@@ -8995,7 +9387,7 @@ function readBody(req, limit = 4096) {
         req.destroy();
       }
     });
-    req.on("end", () => resolve2(body));
+    req.on("end", () => resolve3(body));
     req.on("error", reject);
   });
 }
@@ -9038,7 +9430,7 @@ async function handleRunRequest(req, res, cors) {
     (summary) => log("info", `api run ${runId} done
 ${summary}`),
     (err) => {
-      log("error", `api run ${runId} failed: ${errorMessage(err)}`);
+      log("error", `api run ${runId} failed: ${errorMessage2(err)}`);
       emitPanel({ type: "run.finished", runId, status: "error", at: ts() });
     }
   );
@@ -9113,7 +9505,7 @@ async function handlePanelRequest(req, res) {
     }
     if (lastClient && lastWorkflow && lastRunId) {
       runWorkflow(lastClient, lastDirectory, lastWorkflow, { resumeRunId: lastRunId }).catch((err) => {
-        log("error", `resume failed: ${errorMessage(err)}`);
+        log("error", `resume failed: ${errorMessage2(err)}`);
         emitPanel({ type: "run.finished", runId: lastRunId, status: "error", at: ts() });
       });
       sendJson(res, 200, cors, { ok: true, resuming: lastRunId });
@@ -9138,17 +9530,17 @@ function startPanelServer(directory) {
   return panelStarting;
 }
 function bindPanelServer(directory) {
-  return new Promise((resolve2) => {
+  return new Promise((resolve3) => {
     const srv = http.createServer((req, res) => {
       handlePanelRequest(req, res).catch((err) => {
-        log("error", `panel request failed: ${errorMessage(err)}`);
+        log("error", `panel request failed: ${errorMessage2(err)}`);
         if (!res.headersSent) res.writeHead(500);
         res.end();
       });
     });
     srv.on("error", (err) => {
-      log("warn", `panel server failed: ${errorMessage(err)} — continuing without panel`);
-      resolve2(0);
+      log("warn", `panel server failed: ${errorMessage2(err)} — continuing without panel`);
+      resolve3(0);
     });
     srv.listen(0, "127.0.0.1", () => {
       const addr = srv.address();
@@ -9158,7 +9550,7 @@ function bindPanelServer(directory) {
       writePanelFile(directory, "");
       hookPanelFileExit();
       log("info", `panel server on http://127.0.0.1:${panelPort}`);
-      resolve2(panelPort);
+      resolve3(panelPort);
     });
   });
 }
@@ -9171,26 +9563,26 @@ function chromiumCandidates() {
   const env = process.env;
   if (process.platform === "win32") {
     return [
-      env["ProgramFiles(x86)"] && path.join(env["ProgramFiles(x86)"], "Microsoft", "Edge", "Application", "msedge.exe"),
-      env.ProgramFiles && path.join(env.ProgramFiles, "Microsoft", "Edge", "Application", "msedge.exe"),
-      env.LOCALAPPDATA && path.join(env.LOCALAPPDATA, "Google", "Chrome", "Application", "chrome.exe"),
-      env.ProgramFiles && path.join(env.ProgramFiles, "Google", "Chrome", "Application", "chrome.exe")
+      env["ProgramFiles(x86)"] && path2.join(env["ProgramFiles(x86)"], "Microsoft", "Edge", "Application", "msedge.exe"),
+      env.ProgramFiles && path2.join(env.ProgramFiles, "Microsoft", "Edge", "Application", "msedge.exe"),
+      env.LOCALAPPDATA && path2.join(env.LOCALAPPDATA, "Google", "Chrome", "Application", "chrome.exe"),
+      env.ProgramFiles && path2.join(env.ProgramFiles, "Google", "Chrome", "Application", "chrome.exe")
     ].filter((p) => Boolean(p));
   }
   if (process.platform === "darwin") {
     return ["Google Chrome", "Microsoft Edge", "Chromium"].map((app) => `/Applications/${app}.app/Contents/MacOS/${app}`);
   }
   const bins = ["google-chrome", "chromium", "chromium-browser", "microsoft-edge"];
-  return (env.PATH ?? "").split(path.delimiter).filter(Boolean).flatMap((dir) => bins.map((bin) => path.join(dir, bin)));
+  return (env.PATH ?? "").split(path2.delimiter).filter(Boolean).flatMap((dir) => bins.map((bin) => path2.join(dir, bin)));
 }
 function panelProfileDir() {
   const home = os.homedir();
-  if (process.platform === "win32") return path.join(process.env.LOCALAPPDATA ?? path.join(home, "AppData", "Local"), "Agentry", "panel-window");
-  if (process.platform === "darwin") return path.join(home, "Library", "Application Support", "Agentry", "panel-window");
-  return path.join(process.env.XDG_DATA_HOME ?? path.join(home, ".local", "share"), "agentry", "panel-window");
+  if (process.platform === "win32") return path2.join(process.env.LOCALAPPDATA ?? path2.join(home, "AppData", "Local"), "Agentry", "panel-window");
+  if (process.platform === "darwin") return path2.join(home, "Library", "Application Support", "Agentry", "panel-window");
+  return path2.join(process.env.XDG_DATA_HOME ?? path2.join(home, ".local", "share"), "agentry", "panel-window");
 }
 function openAppWindow(url) {
-  const exe = chromiumCandidates().find((p) => fs.existsSync(p));
+  const exe = chromiumCandidates().find((p) => fs2.existsSync(p));
   if (!exe) return false;
   const geometry = /^(-?\d+),(-?\d+),(\d+),(\d+)$/.exec(process.env.AGENTRY_PANEL_WINDOW ?? "");
   const args = [
@@ -9207,12 +9599,12 @@ function openAppWindow(url) {
     ] : ["--window-size=1180,820"]
   ];
   try {
-    const child = spawn(exe, args, { detached: true, stdio: "ignore" });
-    child.on("error", (err) => log("warn", `panel window failed: ${errorMessage(err)}`));
+    const child = spawn2(exe, args, { detached: true, stdio: "ignore" });
+    child.on("error", (err) => log("warn", `panel window failed: ${errorMessage2(err)}`));
     child.unref();
     return true;
   } catch (err) {
-    log("warn", `panel window failed: ${errorMessage(err)}`);
+    log("warn", `panel window failed: ${errorMessage2(err)}`);
     return false;
   }
 }
@@ -9299,12 +9691,14 @@ function documenterRecords(ctx, selfId) {
     lines.push(`- Result: done · agent ${r.agent ?? "?"} · ${fmtMs(r.ms ?? 0)}${(r.iteration ?? 1) > 1 ? ` · ${r.iteration} iterations` : ""}`);
     if (r.warnings?.length) lines.push(`- Warnings: ${r.warnings.join("; ")}`);
     if (def?.prompt) lines.push(`- Instruction: ${clip(def.prompt.trim(), 600)}`);
+    else if (def?.tool) lines.push(`- Tool: ${clip(JSON.stringify(def.tool), 600)}`);
     const output = ctx.outputs.get(r.nodeId);
     if (output) lines.push("- Output:", "```", clip(output.trim(), 3e3), "```");
     return lines.join("\n");
   }).join("\n\n");
 }
 var titleCase = (key) => key.replace(/[_-]+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+var nodeAgentLabel = (def) => def.type === "tool" ? toolAgentLabel(def.tool) : def.agent_mapping?.opencode ?? "sub-workflow";
 function renderRunReport(ctx, docId, docOutput, schema) {
   const lines = [
     `# Run report — ${ctx.workflow.introduction}`,
@@ -9341,12 +9735,12 @@ function renderRunReport(ctx, docId, docOutput, schema) {
 function runSubWorkflowBlackBox(nodeId, def, runDir, iter) {
   const inner = def.tech_stack?.workflow?.introduction ?? "(inlined workflow)";
   const output = JSON.stringify({ sub_workflow: inner, expanded: false });
-  fs.writeFileSync(
-    path.join(runDir, outputFileName(nodeId)),
+  fs2.writeFileSync(
+    path2.join(runDir, outputFileName(nodeId)),
     JSON.stringify({ nodeId, agent: "sub-workflow", result: output, elapsed_ms: 0, iteration: iter, schemaWarnings: [] }, null, 2)
   );
-  fs.writeFileSync(
-    path.join(runDir, logFileName(nodeId)),
+  fs2.writeFileSync(
+    path2.join(runDir, logFileName(nodeId)),
     [`# ${nodeId}`, `- **Type**: sub-workflow (black box — inner workflow missing/invalid)`, `- **Inlined**: ${inner}`, "", "## Output", output].join("\n")
   );
   return { nodeId, agent: "sub-workflow", output, ms: 0, schemaWarnings: [], notices: [], iteration: iter };
@@ -9354,12 +9748,12 @@ function runSubWorkflowBlackBox(nodeId, def, runDir, iter) {
 async function runSubWorkflow(ctx, dagNode, iter) {
   const { id: nodeId, def } = dagNode;
   const inner = def.tech_stack?.workflow;
-  if (!isObj(inner)) return runSubWorkflowBlackBox(nodeId, def, ctx.runDir, iter);
+  if (!isObj2(inner)) return runSubWorkflowBlackBox(nodeId, def, ctx.runDir, iter);
   const check = checkRunnable(inner);
   if (!check.ok) return { nodeId, agent: "sub-workflow", output: "", ms: 0, schemaWarnings: [], notices: [], iteration: iter, error: `sub-workflow invalid: ${check.errors.join("; ")}` };
   const innerWf = check.workflow;
-  const subDir = path.join(ctx.runDir, nodeId);
-  fs.mkdirSync(subDir, { recursive: true });
+  const subDir = path2.join(ctx.runDir, nodeId);
+  fs2.mkdirSync(subDir, { recursive: true });
   const dag = buildDag(innerWf);
   const own = upstreamContext(def, ctx.outputs, dagNode.branchParents);
   const inbound = [...own.parts.map((p) => p.text), ...def.input?.extra_info ? [`Additional context: ${def.input.extra_info}`] : []].join("\n\n---\n\n");
@@ -9406,12 +9800,12 @@ async function runSubWorkflow(ctx, dagNode, iter) {
   }
   const output = JSON.stringify(merged);
   const innerRun = innerCtx.history.map((r) => `- \`${r.nodeId}\`: ${r.state === "skipped" ? `skipped — ${r.reason ?? "not run"}` : `done${(r.iteration ?? 1) > 1 ? ` (${r.iteration} iterations)` : ""}`}`);
-  fs.writeFileSync(
-    path.join(ctx.runDir, outputFileName(nodeId)),
+  fs2.writeFileSync(
+    path2.join(ctx.runDir, outputFileName(nodeId)),
     JSON.stringify({ nodeId, agent: "sub-workflow", result: output, elapsed_ms: ms, iteration: iter, schemaWarnings }, null, 2)
   );
-  fs.writeFileSync(
-    path.join(ctx.runDir, logFileName(nodeId)),
+  fs2.writeFileSync(
+    path2.join(ctx.runDir, logFileName(nodeId)),
     [`# ${nodeId}`, `- **Type**: sub-workflow`, `- **Inner**: ${innerWf.introduction || "(inlined)"}`, `- **Artifacts**: ${nodeId}/`, "", "## Inner run", ...innerRun, "", "## Output", output].join("\n")
   );
   return { nodeId, agent: "sub-workflow", output, ms, schemaWarnings, notices, iteration: iter };
@@ -9420,15 +9814,79 @@ async function callAgent(client, sessionId, agent, text) {
   const result = await client.session.prompt({ path: { id: sessionId }, body: { agent, parts: [{ type: "text", text }] } });
   return extractText(result.data?.parts ?? result.parts ?? []);
 }
+async function runToolNode(ctx, dagNode, iter) {
+  const { id: nodeId, def } = dagNode;
+  const agent = toolAgentLabel(def.tool);
+  const t0 = Date.now();
+  const fail = (error, resolved = [], notices = []) => {
+    const ms = Date.now() - t0;
+    fs2.writeFileSync(
+      path2.join(ctx.runDir, logFileName(nodeId)),
+      [
+        `# ${nodeId}${iter > 1 ? ` (iter ${iter})` : ""}`,
+        `- **Agent**: ${agent}`,
+        `- **Elapsed**: ${ms} ms`,
+        `- **Result**: FAILED — ${error}`,
+        ...notices.length ? ["", "## Template notices", ...notices.map((n) => `- ${n}`)] : [],
+        "",
+        "## Resolved",
+        "```",
+        ...resolved,
+        "```"
+      ].join("\n")
+    );
+    return { nodeId, agent, output: "", ms, schemaWarnings: [], notices: [], iteration: iter, error };
+  };
+  if (!def.tool) return fail("tool node has no tool block");
+  try {
+    const result = await runTool({
+      nodeId,
+      spec: def.tool,
+      projectDir: ctx.directory,
+      runDir: ctx.runDir,
+      scope: { sources: dagNode.sources, outputs: ctx.outputs, input: ctx.inbound }
+    });
+    const ms = Date.now() - t0;
+    for (const n of result.notices) log("warn", `tool ${ctx.scope}${nodeId}: ${n}`);
+    const schemaWarnings = validateOutput(nodeId, result.output, def.output?.schema);
+    fs2.writeFileSync(
+      path2.join(ctx.runDir, outputFileName(nodeId)),
+      JSON.stringify({ nodeId, agent, result: result.output, elapsed_ms: ms, iteration: iter, schemaWarnings }, null, 2)
+    );
+    fs2.writeFileSync(
+      path2.join(ctx.runDir, logFileName(nodeId)),
+      [
+        `# ${nodeId}${iter > 1 ? ` (iter ${iter})` : ""}`,
+        `- **Agent**: ${agent}`,
+        `- **Elapsed**: ${ms} ms`,
+        `- **Iteration**: ${iter}`,
+        ...schemaWarnings.length > 0 ? [`- **Schema warnings**: ${schemaWarnings.join("; ")}`] : [],
+        ...result.notices.length ? ["", "## Template notices", ...result.notices.map((n) => `- ${n}`)] : [],
+        "",
+        "## Resolved",
+        "```",
+        ...result.resolved,
+        "```",
+        "",
+        "## Output",
+        result.output
+      ].join("\n")
+    );
+    return { nodeId, agent, output: result.output, ms, schemaWarnings, notices: [], iteration: iter };
+  } catch (err) {
+    return err instanceof ToolError ? fail(err.message, err.resolved, err.notices) : fail(errorMessage2(err));
+  }
+}
 async function runSingleNode(ctx, dagNode, iter, previousOutput) {
   const { id: nodeId, def } = dagNode;
   if (def.type === "sub-workflow") return runSubWorkflow(ctx, dagNode, iter);
+  if (def.type === "tool") return runToolNode(ctx, dagNode, iter);
   const mapped = def.agent_mapping?.opencode ?? "";
   let agent;
   try {
     agent = await resolveAgent(ctx.client, mapped);
   } catch (err) {
-    return { nodeId, agent: mapped || "unknown", output: "", ms: 0, schemaWarnings: [], notices: [], iteration: iter, error: errorMessage(err) };
+    return { nodeId, agent: mapped || "unknown", output: "", ms: 0, schemaWarnings: [], notices: [], iteration: iter, error: errorMessage2(err) };
   }
   const records = def.type === "documenter" ? documenterRecords(ctx, nodeId) : void 0;
   const built = buildPrompt(def, ctx.outputs, previousOutput, dagNode.branchParents, records, inboundFor(ctx, nodeId, def, dagNode.branchParents));
@@ -9458,14 +9916,14 @@ ${outputText}`
     }
     const ms = Date.now() - t0;
     const schemaWarnings = validateOutput(nodeId, outputText, schema);
-    if (def.type === "documenter") fs.writeFileSync(path.join(ctx.runDir, REPORT_FILE), renderRunReport(ctx, nodeId, outputText, schema));
+    if (def.type === "documenter") fs2.writeFileSync(path2.join(ctx.runDir, REPORT_FILE), renderRunReport(ctx, nodeId, outputText, schema));
     const iterLabel = iter > 1 ? ` (iter ${iter})` : "";
-    fs.writeFileSync(
-      path.join(ctx.runDir, outputFileName(nodeId)),
+    fs2.writeFileSync(
+      path2.join(ctx.runDir, outputFileName(nodeId)),
       JSON.stringify({ nodeId, agent, result: outputText, elapsed_ms: ms, iteration: iter, schemaWarnings }, null, 2)
     );
-    fs.writeFileSync(
-      path.join(ctx.runDir, logFileName(nodeId)),
+    fs2.writeFileSync(
+      path2.join(ctx.runDir, logFileName(nodeId)),
       [
         `# ${nodeId}${iterLabel}`,
         `- **Agent**: ${agent}`,
@@ -9485,7 +9943,7 @@ ${outputText}`
     );
     return { nodeId, agent, output: outputText, ms, schemaWarnings, notices, iteration: iter };
   } catch (err) {
-    return { nodeId, agent, output: "", ms: Date.now() - t0, schemaWarnings: [], notices, iteration: iter, error: errorMessage(err) };
+    return { nodeId, agent, output: "", ms: Date.now() - t0, schemaWarnings: [], notices, iteration: iter, error: errorMessage2(err) };
   }
 }
 function selectFallbackEvent(runId, nodeId, notice) {
@@ -9584,7 +10042,7 @@ async function runGraph(ctx, dag, st, hooks) {
       continue;
     }
     for (const id of toRun) {
-      const a = dag.nodes.get(id).def.agent_mapping?.opencode ?? "sub-workflow";
+      const a = nodeAgentLabel(dag.nodes.get(id).def);
       const iter = (st.iterations[id] ?? 0) + 1;
       st.nodeStates[id] = "running";
       emit({ type: "node.state", runId, nodeId: id, state: "running", agent: a, iteration: iter, at: ts() });
@@ -9602,7 +10060,7 @@ async function runGraph(ctx, dag, st, hooks) {
       })
     );
     for (const s of wave) {
-      const r = s.status === "fulfilled" ? s.value : { nodeId: "unknown", agent: "unknown", output: "", ms: 0, schemaWarnings: [], notices: [], error: errorMessage(s.reason) };
+      const r = s.status === "fulfilled" ? s.value : { nodeId: "unknown", agent: "unknown", output: "", ms: 0, schemaWarnings: [], notices: [], error: errorMessage2(s.reason) };
       const iter = r.iteration ?? 1;
       st.timings.push({ nodeId: `${ctx.scope}${r.nodeId}`, agent: r.agent, ms: r.ms, iteration: iter });
       st.iterations[r.nodeId] = iter;
@@ -9696,12 +10154,12 @@ async function runWorkflow(client, directory, wf, opts = {}) {
     designTokensCss = loadDesignTokens(directory);
     const dag = buildDag(wf);
     const runId = resumeRunId ?? opts.runId ?? `run_${Date.now()}`;
-    const runDir = path.join(directory, RUN_DIR_ROOT, runId);
-    fs.mkdirSync(runDir, { recursive: true });
-    const inputPath = path.join(runDir, INPUT_FILE);
+    const runDir = path2.join(directory, RUN_DIR_ROOT, runId);
+    fs2.mkdirSync(runDir, { recursive: true });
+    const inputPath = path2.join(runDir, INPUT_FILE);
     let input = opts.input;
-    if (input !== void 0) fs.writeFileSync(inputPath, input);
-    else if (resumeRunId && fs.existsSync(inputPath)) input = fs.readFileSync(inputPath, "utf-8");
+    if (input !== void 0) fs2.writeFileSync(inputPath, input);
+    else if (resumeRunId && fs2.existsSync(inputPath)) input = fs2.readFileSync(inputPath, "utf-8");
     const prior = resumeRunId ? loadCheckpoint(runDir) : null;
     const st = prior ? { ...newGraphState(dag.order), nodeStates: prior.nodes, completedOrder: [...prior.completed], skippedOrder: [...prior.skipped ?? []], iterations: { ...prior.iterations ?? {} } } : newGraphState(dag.order);
     const persist = () => saveCheckpoint(runDir, {
@@ -9733,6 +10191,7 @@ async function runWorkflow(client, directory, wf, opts = {}) {
       client,
       sessionId: sess.data.id,
       runId,
+      directory,
       runDir,
       workflow: wf,
       outputs: /* @__PURE__ */ new Map(),
@@ -9745,8 +10204,8 @@ async function runWorkflow(client, directory, wf, opts = {}) {
     };
     for (const doneId of st.completedOrder) {
       try {
-        const d = JSON.parse(fs.readFileSync(path.join(runDir, outputFileName(doneId)), "utf-8"));
-        if (!isObj(d)) continue;
+        const d = JSON.parse(fs2.readFileSync(path2.join(runDir, outputFileName(doneId)), "utf-8"));
+        if (!isObj2(d)) continue;
         if (typeof d.result === "string" && d.result) ctx.outputs.set(doneId, d.result);
         ctx.history.push({
           nodeId: doneId,
@@ -9791,7 +10250,7 @@ async function runWorkflow(client, directory, wf, opts = {}) {
       `Workflow : ${wf.introduction}`,
       `Run ID   : ${runId}`,
       `Artifacts: ${runDir}`,
-      ...documenter ? [`Report   : ${path.join(runDir, REPORT_FILE)}`] : [],
+      ...documenter ? [`Report   : ${path2.join(runDir, REPORT_FILE)}`] : [],
       `Session  : ${ctx.sessionId}`,
       `Panel    : ${panelUrl}`,
       `Resumed  : ${resumeRunId ? "yes" : "no"}`,
@@ -9814,15 +10273,15 @@ async function runWorkflow(client, directory, wf, opts = {}) {
   }
 }
 function loadWorkflowFile(directory, file) {
-  const candidates = [path.resolve(directory, file), path.resolve(directory, "..", file), path.resolve(file)];
-  const yamlPath = candidates.find((p) => fs.existsSync(p));
+  const candidates = [path2.resolve(directory, file), path2.resolve(directory, "..", file), path2.resolve(file)];
+  const yamlPath = candidates.find((p) => fs2.existsSync(p));
   if (!yamlPath) return { ok: false, error: `Error: file not found. Tried:
 ${candidates.map((c) => "  " + c).join("\n")}` };
   let raw;
   try {
-    raw = (0, import_yaml2.parse)(fs.readFileSync(yamlPath, "utf-8"));
+    raw = (0, import_yaml2.parse)(fs2.readFileSync(yamlPath, "utf-8"));
   } catch (err) {
-    return { ok: false, error: `YAML parse error: ${errorMessage(err)}` };
+    return { ok: false, error: `YAML parse error: ${errorMessage2(err)}` };
   }
   const check = checkRunnable(raw);
   if (!check.ok) return { ok: false, error: ["Workflow validation failed:", ...check.errors.map((e) => `  • ${e}`)].join("\n") };
