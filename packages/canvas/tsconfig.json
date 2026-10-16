@@ -1,0 +1,11 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "baseUrl": ".",
+    "paths": {
+      "reactflow-edge-routing": ["./src/reactflow-edge-routing.shim.d.ts"]
+    }
+  },
+  "include": ["src"]
+}

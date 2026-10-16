@@ -1,0 +1,158 @@
+# Hypothesis-driven debugging — reproduce, investigate 3 hypotheses in parallel, fix the root cause.
+# Deliverable: minimal fix on disk + .agentry/output/debug-report.md (root cause + evidence)
+#
+# Flow: reproduce → [hypothesis_a ‖ hypothesis_b ‖ hypothesis_c] → identify_root_cause → fix_and_verify
+# Uses: parallel hypothesis wave, multi-input synthesis, lock-with-test then minimal fix
+
+introduction: Debug a failure by reproducing it, testing parallel hypotheses, and fixing the root cause
+type: pipeline
+input:  { description: "Bug symptom: error, crash, wrong output, or unexpected behavior" }
+output: { description: "Minimal fix + a debug report at .agentry/output/debug-report.md" }
+
+agents:
+  reproduce:
+    introduction: Reproduce the failure and gather hard evidence
+    type: straight
+    input:
+      extra_info: "The bug symptom / error message / wrong behavior goes here"
+    output:
+      schema: { reproduction: "string", evidence: "string[]", suspect_area: "string" }
+    prompt: >
+      Establish a reliable reproduction and collect evidence BEFORE theorizing.
+
+      Do this:
+      - Restate the exact observed failure (error text, wrong value, crash, hang)
+      - Find or construct the minimal reproduction (command, input, or failing test)
+      - Run it and capture the real output: stack trace, logs, exit code, actual vs expected
+      - Locate the rough area of code involved (entry path from trigger to failure)
+      - Note what is NOT broken (narrow the search space)
+
+      Be factual. Record what you actually observed, not what you assume.
+      If you genuinely cannot reproduce, say so and report what you tried.
+    agent_mapping:
+      opencode: explore
+
+  hypothesis_a:
+    introduction: Investigate hypothesis A — the most likely direct cause
+    type: straight
+    input:
+      from: reproduce
+    output:
+      schema: { hypothesis: "string", verdict: "string", evidence: "string[]" }
+    prompt: >
+      Form and test the MOST LIKELY direct cause of this failure (e.g. a logic bug,
+      off-by-one, wrong condition, bad value in the suspect area itself).
+
+      - State your specific hypothesis in one sentence
+      - Read the relevant code and trace the failing path
+      - Look for the concrete evidence that would CONFIRM or REFUTE it (values, branches, state)
+      - Render a verdict: CONFIRMED / REFUTED / INCONCLUSIVE, with the evidence that decided it
+
+      Investigate only — do NOT fix anything yet. Be honest if your hypothesis is wrong.
+    agent_mapping:
+      opencode: explore
+
+  hypothesis_b:
+    introduction: Investigate hypothesis B — inputs, boundaries, and state
+    type: straight
+    input:
+      from: reproduce
+    output:
+      schema: { hypothesis: "string", verdict: "string", evidence: "string[]" }
+    prompt: >
+      Form and test a hypothesis about INPUT / BOUNDARY / STATE causes — different
+      angle from the direct-logic one. Consider: bad/edge-case input, null/empty,
+      uninitialized or stale state, race/ordering, type coercion, encoding, off-by-one
+      at a boundary, async timing.
+
+      - State your specific hypothesis in one sentence
+      - Trace where the suspect value/state originates and how it reaches the failure
+      - Gather evidence that confirms or refutes it
+      - Verdict: CONFIRMED / REFUTED / INCONCLUSIVE, with deciding evidence
+
+      Investigate only — no fixes. Report honestly even if refuted.
+    agent_mapping:
+      opencode: explore
+
+  hypothesis_c:
+    introduction: Investigate hypothesis C — environment, dependencies, integration
+    type: straight
+    input:
+      from: reproduce
+    output:
+      schema: { hypothesis: "string", verdict: "string", evidence: "string[]" }
+    prompt: >
+      Form and test a hypothesis about EXTERNAL / INTEGRATION causes — a third angle.
+      Consider: dependency version/behavior change, config/env mismatch, an external
+      service or API contract, a wrong assumption about a library, a build/runtime
+      version difference, or the bug living OUTSIDE the obvious suspect area.
+
+      - State your specific hypothesis in one sentence
+      - Check the relevant dependency/config/integration code and behavior
+      - Gather confirming or refuting evidence
+      - Verdict: CONFIRMED / REFUTED / INCONCLUSIVE, with deciding evidence
+
+      Investigate only — no fixes. Honesty over confirmation.
+    agent_mapping:
+      opencode: explore
+
+  identify_root_cause:
+    introduction: Weigh the hypotheses and pin the root cause
+    type: straight
+    input:
+      from: [reproduce, hypothesis_a, hypothesis_b, hypothesis_c]
+    output:
+      schema: { root_cause: "string", confidence: "string", fix_strategy: "string" }
+    prompt: >
+      Weigh the three investigations against the reproduction evidence and determine
+      the actual root cause.
+
+      - Which hypothesis is supported by the strongest evidence? Reconcile conflicts.
+      - State the root cause precisely: file:line + the exact mechanism that produces
+        the observed failure (not just "something in X")
+      - State your confidence (high/medium/low) and what evidence backs it
+      - If all three are inconclusive, say so and propose the next investigation step
+        rather than guessing
+      - Define the MINIMAL fix strategy that addresses this root cause (not a refactor)
+
+      Do not fix yet — just nail the cause and the plan.
+    agent_mapping:
+      opencode: build
+
+  fix_and_verify:
+    introduction: Lock the bug with a test, apply the minimal fix, verify
+    type: straight
+    input:
+      from: [reproduce, identify_root_cause]
+    output:
+      schema: { changed_files: "string[]", verified: "boolean" }
+    prompt: >
+      Fix the confirmed root cause. Write the report to `.agentry/output/debug-report.md`.
+
+      Steps, in order:
+      1. Lock the bug: add a regression test that reproduces the failure and currently FAILS
+      2. Apply the MINIMAL fix at the root cause — do NOT refactor while fixing
+      3. Re-run: the regression test now PASSES and the original reproduction is gone
+      4. Run the surrounding test suite to confirm no new breakage
+
+      Then write the report:
+      # Debug Report
+      ## Symptom (what was observed)
+      ## Root Cause (file:line + the mechanism, with evidence)
+      ## Hypotheses Tested (A/B/C — which held, which were refuted, and why)
+      ## Fix (what changed and why it's minimal)
+      ## Verification (the regression test + suite results proving it's fixed)
+
+      Rules: no type-error suppression, no deleting/weakening tests to pass, no
+      symptom-masking. If the fix doesn't hold after 2 attempts, stop and report the
+      blocker instead of shotgun-editing.
+    agent_mapping:
+      opencode: build
+
+workflow:
+  - reproduce
+  - hypothesis_a
+  - hypothesis_b
+  - hypothesis_c
+  - identify_root_cause
+  - fix_and_verify

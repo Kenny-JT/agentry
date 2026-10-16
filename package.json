@@ -1,0 +1,23 @@
+{
+  "name": "agentry-monorepo",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Agentry — visual, cross-CLI command center for terminal coding agents (monorepo).",
+  "packageManager": "pnpm@11.8.0",
+  "engines": {
+    "node": ">=22.6"
+  },
+  "scripts": {
+    "dev": "pnpm --filter @agentry/app dev",
+    "build": "pnpm --filter @agentry/app build",
+    "typecheck": "pnpm -r --if-present run typecheck",
+    "test": "pnpm -r --if-present run test",
+    "verify": "node scripts/version.mjs --check && pnpm typecheck && pnpm --filter @agentry/plugin check && pnpm test && pnpm build",
+    "version:set": "node scripts/version.mjs set",
+    "tauri": "pnpm --filter @agentry/app tauri"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3"
+  }
+}

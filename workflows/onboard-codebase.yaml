@@ -1,0 +1,131 @@
+# Understand an unfamiliar codebase and produce an onboarding guide.
+# Deliverable: .agentry/output/onboarding.md (structure + architecture + how-to-run + first tasks)
+#
+# Flow: map_structure → [analyze_architecture ‖ analyze_dependencies ‖ analyze_entrypoints] → write_guide
+# Uses: parallel waves, multi-input, structured JSON output
+
+introduction: Onboard a developer onto an unfamiliar codebase
+type: pipeline
+input:  { description: "Project to understand" }
+output: { description: "Onboarding guide at .agentry/output/onboarding.md" }
+
+agents:
+  map_structure:
+    introduction: Map the project layout and identify what matters
+    type: straight
+    input:
+      extra_info: "Scan the whole tree; ignore node_modules, dist, build, .git, lockfiles"
+    output:
+      schema: { language: "string", layout: "string", key_dirs: "string[]" }
+    prompt: >
+      Map this project so the next agents know where to look. Do NOT analyze deeply yet.
+
+      Return:
+      - Primary language(s) and framework(s) (read manifests: package.json / pyproject.toml / go.mod / Cargo.toml etc.)
+      - Top-level directory tree with a one-line purpose for each significant directory
+      - Where the source lives vs config vs tests vs docs
+      - The 5-10 most important files to read (entry points, main modules, core config)
+      - Project size signal (rough file count, is it a monorepo?)
+
+      Be concrete: real paths, real names. Skip generated/vendored directories.
+    agent_mapping:
+      opencode: explore
+
+  analyze_architecture:
+    introduction: Understand how the code is organized and why
+    type: straight
+    input:
+      from: map_structure
+    output:
+      schema: { architecture: "string", patterns: "string[]", module_map: "string" }
+    prompt: >
+      Read the key files identified in the structure map. Explain the architecture.
+
+      Cover EACH of these:
+      - Overall architecture style (layered, MVC, hexagonal, microservices, plugin-based, etc.)
+      - How modules connect: what depends on what, where the boundaries are
+      - Core abstractions / domain models the rest of the code is built around
+      - Notable design patterns in use (with file:line examples)
+      - Data flow: how a typical request/command travels through the system
+
+      Keep it concrete and tied to real files. A new hire should be able to navigate after reading this.
+    agent_mapping:
+      opencode: explore
+
+  analyze_dependencies:
+    introduction: Inventory the tech stack and external dependencies
+    type: straight
+    input:
+      from: map_structure
+    output:
+      schema: { tech_stack: "string", key_deps: "string[]", external_services: "string[]" }
+    prompt: >
+      From the manifests and lock files, inventory what this project is built on.
+
+      Return:
+      - Runtime / build / test tooling (what runs it, what builds it, what tests it)
+      - The 10 most important runtime dependencies and what each is FOR in THIS project
+      - Dev/build dependencies worth knowing
+      - External services the code talks to (databases, APIs, queues, cloud) — grep for connection strings, SDK imports, env var usage
+      - Any version constraints or unusual pins worth flagging
+
+      Explain WHY each major dependency is here, not just its name.
+    agent_mapping:
+      opencode: explore
+
+  analyze_entrypoints:
+    introduction: Find how to build, run, test, and contribute
+    type: straight
+    input:
+      from: map_structure
+    output:
+      schema: { run_commands: "string[]", test_commands: "string[]", env_setup: "string" }
+    prompt: >
+      Figure out how a new developer actually gets this running. Read README,
+      package scripts, Makefile, CI config, Dockerfile, .env.example, contributing docs.
+
+      Return concrete, copy-pasteable steps for:
+      - Initial setup (install deps, env vars needed, any services to start)
+      - How to run the project locally (exact commands)
+      - How to run the tests (exact commands)
+      - How to build / lint / format
+      - The contribution flow if documented (branch naming, PR process, commit style)
+
+      If something isn't documented, say so explicitly — do not invent commands.
+    agent_mapping:
+      opencode: explore
+
+  write_guide:
+    introduction: Synthesize everything into one onboarding guide
+    type: straight
+    input:
+      from: [analyze_architecture, analyze_dependencies, analyze_entrypoints]
+    output:
+      schema: { sections: "string[]", first_tasks: "string[]" }
+    prompt: >
+      Combine the architecture, dependency, and entrypoint analyses into a single
+      onboarding guide. Write it to `.agentry/output/onboarding.md`.
+
+      Guide structure:
+      # Onboarding: <project name>
+      ## TL;DR (3-4 sentences: what this project is, what it's built with, how to run it)
+      ## Getting Started (copy-pasteable setup + run + test commands from the entrypoint analysis)
+      ## Architecture Overview (from the architecture analysis, with a simple module map)
+      ## Tech Stack (from the dependency analysis — what and why)
+      ## Codebase Tour (the 5-10 must-read files, in the order a new hire should read them)
+      ## Good First Tasks (3-5 concrete, low-risk starter tasks grounded in what you actually saw)
+      ## Gotchas (anything surprising, undocumented, or fragile you noticed)
+
+      Rules:
+      - Every claim must be grounded in the analyses — no generic boilerplate advice
+      - Setup/run/test commands must be the REAL ones, not assumed
+      - If the upstream analyses disagree or left gaps, say so honestly
+    agent_mapping:
+      opencode: build
+
+workflow:
+  - map_structure
+  - analyze_architecture
+  - analyze_dependencies
+  - analyze_entrypoints
+  - write_guide

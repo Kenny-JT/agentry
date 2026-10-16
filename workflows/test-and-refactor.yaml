@@ -1,0 +1,137 @@
+# Find testable code, write unit tests, run them, then refactor if tests pass.
+# Deliverable: test files on disk + refactored source (only if tests green)
+#
+# Flow: explore → write_tests → run_tests → (refactor IF pass | diagnose IF fail)
+# Uses: conditional branch (trigger.when), multi-input
+
+introduction: Add unit tests to a module and refactor for clarity
+type: pipeline
+input:  { description: "Target source file or module" }
+output: { description: "Unit tests + optionally refactored code" }
+
+agents:
+  explore_code:
+    introduction: Find the best candidate for testing
+    type: straight
+    input:
+      extra_info: "Find source files that need tests"
+    output:
+      schema: {}
+    prompt: >
+      Explore this project and find the source file most in need of unit tests.
+      Prioritize: files with business logic, utility functions, or data transformations
+      that currently have NO test coverage.
+
+      For the chosen file, return:
+      - File path
+      - What each exported function/class does (one line each)
+      - Which test framework the project already uses (check package.json / config files)
+      - If no test framework exists, recommend one that fits the project
+      - List of specific test cases you'd write (function name + scenario)
+
+      Be concrete. "Test the add function with negative numbers" not "test edge cases".
+    agent_mapping:
+      opencode: explore
+
+  write_tests:
+    introduction: Write real, runnable unit tests
+    type: straight
+    input:
+      from: explore_code
+    output:
+      schema: {}
+    prompt: >
+      Write unit tests for the file identified in the exploration.
+
+      Rules:
+      - Use the project's existing test framework. If none, install one first.
+      - Write the test file next to the source (e.g., foo.test.ts next to foo.ts)
+      - Cover: happy path, edge cases (empty input, null, boundary values), error cases
+      - Each test name must describe the exact scenario: "returns empty array when input is null"
+      - Import the real module — do NOT mock the thing you're testing
+      - DO NOT modify the source code
+
+      After writing, report: test file path, number of test cases, what each tests.
+    agent_mapping:
+      opencode: build
+
+  run_tests:
+    introduction: Execute the tests and report pass/fail
+    type: straight
+    input:
+      from: write_tests
+    output:
+      schema: {}
+    prompt: >
+      Run the unit tests that were just written. Use the project's test runner.
+      If the test runner isn't installed, install it first.
+
+      Report the raw output: how many passed, how many failed, any error messages.
+      If tests fail because of TEST code bugs (wrong imports, syntax errors),
+      fix the test file and re-run. Do NOT touch the source code.
+
+      End your response with either "ALL PASSED" or "SOME FAILED".
+    agent_mapping:
+      opencode: build
+
+  refactor:
+    introduction: Refactor source code (only when tests pass)
+    type: straight
+    input:
+      from: [explore_code, run_tests]
+    trigger:
+      when:
+        from: run_tests
+        contains: "ALL PASSED"
+    output:
+      schema: {}
+    prompt: >
+      Tests are green. Now refactor the source file for clarity.
+
+      Allowed changes:
+      - Rename unclear variables/functions to descriptive names
+      - Extract complex expressions into well-named helpers
+      - Remove dead code and unused imports
+      - Add missing type annotations
+      - Simplify overly nested conditionals
+
+      Forbidden:
+      - Changing public API signatures
+      - Adding new features
+      - Deleting or modifying test files
+
+      After refactoring, run the tests again. If any test breaks,
+      revert that specific change. Report what you changed and final test results.
+    agent_mapping:
+      opencode: build
+
+  diagnose_failures:
+    introduction: Analyze test failures (only when tests fail)
+    type: straight
+    input:
+      from: run_tests
+    trigger:
+      when:
+        from: run_tests
+        contains: "SOME FAILED"
+    output:
+      schema: {}
+    prompt: >
+      Tests have failures. Do NOT refactor — diagnose the failures instead.
+
+      For each failing test:
+      1. Is it a real bug in the source code, or a mistake in the test?
+      2. If test bug → fix the test, re-run, confirm it passes now
+      3. If source bug → describe the bug, its root cause, and a suggested fix
+         (but do NOT apply the fix — that's the developer's call)
+
+      Report: which tests you fixed, which are real source bugs, and next steps.
+    agent_mapping:
+      opencode: build
+
+workflow:
+  - explore_code
+  - write_tests
+  - run_tests
+  - refactor
+  - diagnose_failures

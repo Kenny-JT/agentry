@@ -1,0 +1,71 @@
+# Parallel analysis workflow — diamond DAG pattern
+# explore → (analyze_structure ‖ analyze_deps) → synthesize
+# Tests: multi-input (from: [a, b]), parallel wave execution, structured JSON output
+
+introduction: Parallel codebase analysis with synthesis
+type: pipeline
+input:  { description: "Target project directory" }
+output: { description: "Comprehensive project analysis report" }
+
+agents:
+  explore_code:
+    introduction: Discover project structure and key files
+    type: straight
+    input:
+      extra_info: "Scan top-level files and directories"
+    output:
+      schema: {}
+    prompt: >
+      List the top-level files and directories in this project.
+      Return a brief summary of the project structure.
+      Be concise — no more than 15 lines.
+    agent_mapping:
+      opencode: explore
+
+  analyze_structure:
+    introduction: Analyze code architecture and design patterns
+    type: straight
+    input:
+      from: explore_code
+    output:
+      schema: { patterns: "string[]", architecture: "string" }
+    prompt: >
+      Based on the project exploration, analyze the code architecture.
+      Identify design patterns and key architectural decisions.
+      Keep it under 200 words.
+    agent_mapping:
+      opencode: explore
+
+  analyze_deps:
+    introduction: Analyze dependencies and tech stack
+    type: straight
+    input:
+      from: explore_code
+    output:
+      schema: { dependencies: "string[]", tech_stack: "string" }
+    prompt: >
+      Based on the project exploration, analyze the project dependencies.
+      List key dependencies and describe the tech stack.
+      Keep it under 200 words.
+    agent_mapping:
+      opencode: explore
+
+  synthesize:
+    introduction: Combine analyses into a final report
+    type: straight
+    input:
+      from: [analyze_structure, analyze_deps]
+    output:
+      schema: { report: "string", highlights: "string[]" }
+    prompt: >
+      Synthesize the structure analysis and dependency analysis
+      into a comprehensive project report with key highlights.
+      Keep it under 300 words.
+    agent_mapping:
+      opencode: build
+
+workflow:
+  - explore_code
+  - analyze_structure
+  - analyze_deps
+  - synthesize

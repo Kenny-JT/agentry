@@ -1,0 +1,53 @@
+# Every pull request (and every push to main) must pass this before it can merge.
+# Same steps as `pnpm verify` locally, split up so a failure names its step.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: check (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Versions agree
+        run: node scripts/version.mjs --check
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Plugin bundle is fresh
+        run: pnpm --filter @agentry/plugin check
+
+      - name: Tests
+        run: pnpm test
+
+      - name: Build the editor
+        run: pnpm build

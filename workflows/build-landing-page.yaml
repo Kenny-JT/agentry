@@ -1,0 +1,114 @@
+# Build a production-quality landing page for any project.
+# Deliverable: .agentry/output/index.html (single-file, no dependencies, responsive)
+#
+# Flow: understand → design → write_page → review (loop until APPROVED, max 2)
+
+introduction: Build a landing page for this project
+type: pipeline
+input:  { description: "Project to build a landing page for" }
+output: { description: "A complete landing page at .agentry/output/index.html" }
+
+agents:
+  understand_project:
+    introduction: Read the project and extract landing page copy material
+    type: straight
+    input:
+      extra_info: "Read README, package.json, and key source files"
+    output:
+      schema: {}
+    prompt: >
+      Analyze this project thoroughly — README, package.json, source files.
+      Extract everything a copywriter needs for a landing page:
+      - Project name and one-line tagline
+      - What problem it solves (in the user's language, not developer jargon)
+      - 3-5 key features with specific descriptions (not generic)
+      - Target audience
+      - Tech stack (for a "Built with" section)
+      - Any existing branding (colors, logos mentioned in docs)
+      Be specific — use actual names, actual features, actual numbers.
+    agent_mapping:
+      opencode: explore
+
+  design_plan:
+    introduction: Plan layout, colors, and write all copy
+    type: straight
+    input:
+      from: understand_project
+    output:
+      schema: {}
+    prompt: >
+      Design a complete landing page plan. Write ALL the copy — no placeholders.
+
+      Deliver:
+      1. Page sections: hero (headline + subheadline + CTA), features (3-5 cards),
+         how-it-works (3 steps), social proof / stats, final CTA, footer
+      2. Color palette: primary, secondary, accent, bg, text (hex codes).
+         Pick colors that match the project's personality.
+      3. Every headline, description, and button label — final copy, not drafts
+      4. One-sentence meta description for the <head>
+
+      This plan goes directly to the developer. Be complete.
+    agent_mapping:
+      opencode: build
+
+  write_page:
+    introduction: Create the actual HTML file
+    type: straight
+    input:
+      from: design_plan
+    output:
+      schema: {}
+    prompt: >
+      Create a production-quality landing page as a SINGLE HTML file.
+      Write it to `.agentry/output/index.html`.
+
+      Hard requirements:
+      - Single file, inline <style>, zero external dependencies
+      - Responsive: looks great on 375px phone AND 1440px desktop
+      - meta viewport tag, proper charset
+      - Semantic HTML5 (header, main, section, footer)
+      - Smooth-scroll nav links
+      - Hero with gradient or subtle background
+      - Feature cards with icons (use Unicode/emoji, no icon library)
+      - Subtle CSS animations (fade-in on scroll using IntersectionObserver)
+      - Dark color scheme with good contrast (WCAG AA)
+      - All copy from the design plan — zero Lorem Ipsum
+
+      After writing, confirm the path and list what sections you built.
+    agent_mapping:
+      opencode: build
+
+  review_quality:
+    introduction: Review the page, fix issues, approve when ready
+    type: straight
+    input:
+      from: write_page
+    trigger:
+      loop:
+        max: 2
+        exit_when:
+          contains: "APPROVED"
+    output:
+      schema: {}
+    prompt: >
+      Read `.agentry/output/index.html` and review it critically.
+      Check each item — do not skip:
+
+      1. Valid HTML? (no unclosed tags, no broken nesting)
+      2. Responsive? (meta viewport present, media queries for mobile)
+      3. Is ALL the copy real and specific to THIS project? (no Lorem Ipsum, no "[Project Name]")
+      4. Visual quality? (contrast ratio, spacing, font sizes)
+      5. Interactive elements work? (smooth scroll, hover states, animations)
+      6. File is self-contained? (no external CSS/JS/font imports)
+
+      If ALL checks pass → respond with "APPROVED" and a one-line summary.
+      If ANY check fails → fix the issues in the file, describe what you fixed.
+      Do not say APPROVED unless you actually verified every item.
+    agent_mapping:
+      opencode: build
+
+workflow:
+  - understand_project
+  - design_plan
+  - write_page
+  - review_quality

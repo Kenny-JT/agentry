@@ -1,0 +1,11 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "types": ["node"],
+    "baseUrl": ".",
+    "paths": {
+      "reactflow-edge-routing": ["../canvas/src/reactflow-edge-routing.shim.d.ts"]
+    }
+  },
+  "include": ["src", "vite.config.ts"]
+}

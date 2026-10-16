@@ -1,0 +1,189 @@
+# Parallel security audit — hunt vulnerabilities, prove exploitability, calibrate severity.
+# Deliverable: .agentry/output/security-audit.md (findings ranked by real exploitability)
+#
+# Flow: scope → [hunt_secrets ‖ hunt_injection ‖ hunt_authz ‖ hunt_deps] → verify_exploitability → write_report
+# Uses: parallel hunter wave, multi-input synthesis, exploitability-calibrated severity
+
+introduction: Multi-hunter security audit with exploitability-calibrated findings
+type: pipeline
+input:  { description: "Codebase to audit" }
+output: { description: "Security report at .agentry/output/security-audit.md" }
+
+agents:
+  scope_audit:
+    introduction: Map the attack surface and identify what to hunt in
+    type: straight
+    input:
+      extra_info: "Focus on code handling untrusted input, auth, secrets, and external I/O"
+    output:
+      schema: { entrypoints: "string[]", trust_boundaries: "string[]", sensitive_files: "string[]" }
+    prompt: >
+      Map the attack surface so the hunters know where to dig. Do NOT report
+      vulnerabilities yet — just locate the dangerous territory.
+
+      Return:
+      - Entry points where untrusted input enters (HTTP routes, CLI args, file uploads, message consumers, webhooks)
+      - Trust boundaries (where user/external data crosses into privileged operations)
+      - Files touching: auth/sessions, secrets/config, DB queries, file system, shell, deserialization, network calls
+      - The tech stack's known footguns (e.g. framework-specific injection sinks)
+
+      Give real paths. This scopes four parallel hunters, so be thorough about WHERE.
+    agent_mapping:
+      opencode: explore
+
+  hunt_secrets:
+    introduction: Hunt for exposed secrets and sensitive-data leaks
+    type: straight
+    input:
+      from: scope_audit
+    output:
+      schema: { findings: "string[]", count: "number" }
+    prompt: >
+      Hunt for secrets and sensitive-data exposure across the scoped files.
+      Check EACH — do not skip:
+
+      - Hardcoded credentials: API keys, tokens, passwords, private keys (grep patterns)
+      - Secrets committed in config/.env files tracked by git
+      - Secrets or PII leaked into logs, error messages, or responses
+      - Sensitive data sent to third parties or analytics
+      - Missing encryption for data at rest / in transit where expected
+      - Overly permissive file permissions or world-readable secrets
+
+      For each finding: file:line, what's exposed, how it could be obtained.
+      If a category is clean, say "checked, none found".
+    agent_mapping:
+      opencode: explore
+
+  hunt_injection:
+    introduction: Hunt for injection and untrusted-input flaws
+    type: straight
+    input:
+      from: scope_audit
+    output:
+      schema: { findings: "string[]", count: "number" }
+    prompt: >
+      Hunt for injection and input-handling flaws. Trace untrusted input from the
+      entry points to dangerous sinks. Check EACH:
+
+      - SQL/NoSQL injection (string-concatenated queries, unparameterized input)
+      - Command injection (user input reaching shell/exec/eval)
+      - XSS (unescaped user input rendered into HTML/templates)
+      - Path traversal (user input in file paths without sanitization)
+      - SSRF (user-controlled URLs in server-side requests)
+      - Unsafe deserialization (pickle/yaml.load/etc. on untrusted data)
+      - Open redirects, template injection
+
+      For each finding: file:line, the tainted input path (source → sink), the payload shape.
+      If a category is clean, say "checked, none found".
+    agent_mapping:
+      opencode: explore
+
+  hunt_authz:
+    introduction: Hunt for authentication and authorization flaws
+    type: straight
+    input:
+      from: scope_audit
+    output:
+      schema: { findings: "string[]", count: "number" }
+    prompt: >
+      Hunt for auth and access-control flaws. Check EACH:
+
+      - Missing authentication on sensitive routes/operations
+      - Missing or broken authorization (IDOR: can user A access user B's data?)
+      - Privilege escalation paths (role checks that can be bypassed)
+      - Weak session handling (predictable tokens, no expiry, no rotation)
+      - CORS misconfiguration (wildcard origins with credentials)
+      - JWT/cookie flaws (no signature verification, alg:none, insecure flags)
+      - Rate-limit / brute-force gaps on auth endpoints
+
+      For each finding: file:line, what's missing/broken, who could exploit it and how.
+      If a category is clean, say "checked, none found".
+    agent_mapping:
+      opencode: explore
+
+  hunt_deps:
+    introduction: Hunt for vulnerable and risky dependencies
+    type: straight
+    input:
+      from: scope_audit
+    output:
+      schema: { findings: "string[]", count: "number" }
+    prompt: >
+      Hunt for dependency and supply-chain risk. Check EACH:
+
+      - Known-vulnerable dependency versions (inspect lock files; flag suspicious pins)
+      - Dependencies pulling from untrusted sources or with typosquat-looking names
+      - Outdated packages with public CVEs in security-sensitive areas (crypto, auth, parsers)
+      - Dangerous transitive deps reachable from the attack surface
+      - Build/CI scripts running untrusted code or fetching unpinned artifacts
+
+      If a vulnerability scanner (npm audit / pip-audit / etc.) is available, run it and
+      summarize the real results. For each finding: package, version, the CVE/issue,
+      whether THIS code actually reaches the vulnerable path.
+      If clean, say "checked, none found".
+    agent_mapping:
+      opencode: explore
+
+  verify_exploitability:
+    introduction: Triage findings by real, demonstrable exploitability
+    type: straight
+    input:
+      from: [hunt_secrets, hunt_injection, hunt_authz, hunt_deps]
+    output:
+      schema: { confirmed: "string[]", dismissed: "string[]" }
+    prompt: >
+      You are the exploitability judge. Take every finding from the four hunters and
+      separate REAL, reachable vulnerabilities from theoretical noise.
+
+      For each finding:
+      - Is the vulnerable code actually reachable by an attacker? Trace the path.
+      - What concretely would an attacker do? Sketch the exploit (do NOT run anything
+        destructive; describe the PoC steps and payload).
+      - Calibrate severity by ACTUAL exploitability, not category label:
+        CRITICAL (trivially exploitable, high impact) → HIGH → MEDIUM → LOW → INFO
+      - Dismiss findings that aren't reachable or aren't real, and say WHY.
+
+      Output two lists: confirmed (with severity + exploit sketch) and dismissed (with reason).
+      Deduplicate overlap across hunters.
+    agent_mapping:
+      opencode: build
+
+  write_report:
+    introduction: Write the final security report
+    type: straight
+    input:
+      from: verify_exploitability
+    output:
+      schema: { critical_count: "number", high_count: "number", overall_risk: "string" }
+    prompt: >
+      Write the final security report from the confirmed findings.
+      Write it to `.agentry/output/security-audit.md`.
+
+      Structure:
+      # Security Audit Report
+      ## Executive Summary (overall risk posture, biggest threat, in 3-4 sentences)
+      ## Overall Risk: [Critical / High / Medium / Low]
+      ## Critical Findings (exploit now)
+      ## High Findings (fix before release)
+      ## Medium Findings (fix this cycle)
+      ## Low / Informational
+      ## Dismissed (with reasons — shows what was checked and ruled out)
+
+      For each finding include: title, severity, file:line, exploit sketch, and a
+      concrete remediation (show the code fix, not just "sanitize input").
+
+      Rules:
+      - Rank by demonstrated exploitability, not category
+      - Do NOT inflate severity; an unreachable bug is not Critical
+      - Every finding must be actionable enough to open a ticket from
+    agent_mapping:
+      opencode: build
+
+workflow:
+  - scope_audit
+  - hunt_secrets
+  - hunt_injection
+  - hunt_authz
+  - hunt_deps
+  - verify_exploitability
+  - write_report

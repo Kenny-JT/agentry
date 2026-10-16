@@ -1,0 +1,166 @@
+# Take a GitHub issue (or bug description), fix it, verify, and draft a PR.
+# Deliverable: fixed code on disk + .agentry/output/pr-description.md
+#
+# Flow: understand_issue → locate_code → implement_fix → run_tests → (write_pr IF pass | report_blocker IF fail)
+# Uses: conditional branch (trigger.when), multi-input, structured output
+
+introduction: Fix a GitHub issue end-to-end and draft a pull request
+type: pipeline
+input:  { description: "GitHub issue number/URL or a bug description" }
+output: { description: "Fix on disk + PR description at .agentry/output/pr-description.md" }
+
+agents:
+  understand_issue:
+    introduction: Read the issue and restate it as a concrete, testable problem
+    type: straight
+    input:
+      extra_info: "Issue URL/number, or pasted bug report. If it's a number and gh CLI is available, fetch it."
+    output:
+      schema: { problem: "string", expected: "string", reproduction: "string" }
+    prompt: >
+      Turn the issue into a precise, testable problem statement.
+
+      If given an issue number/URL and `gh` CLI is available, run `gh issue view <n>`
+      to fetch the full text + comments. Otherwise use the pasted description.
+
+      Return:
+      - The actual problem in one precise sentence
+      - Expected behavior vs current (buggy) behavior
+      - Reproduction steps if the issue gives them (or the clearest you can infer)
+      - The acceptance criteria: what must be true for this issue to be "fixed"
+      - Any labels/context that hint at scope (bug vs feature vs regression)
+
+      Do not propose a fix yet. Just nail down WHAT is wrong.
+    agent_mapping:
+      opencode: explore
+
+  locate_code:
+    introduction: Find the exact code responsible
+    type: straight
+    input:
+      from: understand_issue
+    output:
+      schema: { suspect_files: "string[]", root_cause: "string", conventions: "string" }
+    prompt: >
+      Find the code responsible for the problem described.
+
+      Do this:
+      - Trace from symptom to source: grep for relevant strings, follow the call path
+      - Identify the specific file(s) and function(s) that cause the buggy behavior
+      - State the likely root cause (file:line + why it produces the wrong result)
+      - Note the test framework and where tests for this area live
+      - Note the conventions to follow when editing here
+
+      Be specific: real paths, real line ranges. If you can't pinpoint it, say what
+      you ruled out and where the uncertainty is — do not guess blindly.
+    agent_mapping:
+      opencode: explore
+
+  implement_fix:
+    introduction: Apply a minimal, correct fix plus a regression test
+    type: straight
+    input:
+      from: [understand_issue, locate_code]
+    output:
+      schema: { changed_files: "string[]", fix_summary: "string" }
+    prompt: >
+      Fix the issue at the root cause identified. Fix MINIMALLY — do not refactor
+      surrounding code while fixing.
+
+      Rules:
+      - Address the root cause, not the symptom
+      - Add a regression test that FAILS before your fix and PASSES after, using the
+        project's existing test framework, placed where tests for this area live
+      - Match local conventions
+      - No type-error suppression, no empty catch blocks
+      - Touch only what the fix requires
+
+      Report: every file changed, what you changed, and how the new test pins the bug.
+    agent_mapping:
+      opencode: build
+
+  run_tests:
+    introduction: Run the tests and report pass/fail
+    type: straight
+    input:
+      from: implement_fix
+    output:
+      schema: { passed: "number", failed: "number", output: "string" }
+    prompt: >
+      Run the project's test suite (at least the regression test + the affected area).
+      Use the project's test runner; install it first if missing.
+
+      Report raw results: how many passed, how many failed, and any error output.
+      If a failure is caused by a mistake in YOUR test code (bad import, typo),
+      fix the test and re-run. Do NOT weaken the test to make it pass, and do NOT
+      touch unrelated source to silence failures.
+
+      End your response with either "ALL PASSED" or "SOME FAILED".
+    agent_mapping:
+      opencode: build
+
+  write_pr:
+    introduction: Draft the PR description (only when tests pass)
+    type: straight
+    input:
+      from: [understand_issue, implement_fix, run_tests]
+    trigger:
+      when:
+        from: run_tests
+        contains: "ALL PASSED"
+    output:
+      schema: { title: "string", body: "string" }
+    prompt: >
+      Tests are green. Draft a pull request description.
+      Write it to `.agentry/output/pr-description.md`.
+
+      Structure:
+      # <concise PR title, conventional-commit style if the repo uses it>
+      ## What
+      (what changed, in 2-3 sentences)
+      ## Why
+      (the bug / issue this fixes — link the issue: "Fixes #N")
+      ## How
+      (the approach + the root cause that was fixed)
+      ## Testing
+      (the regression test added + how you verified, with the test result)
+      ## Risk
+      (blast radius, anything reviewers should scrutinize)
+
+      Match the repo's existing PR/commit style if you can detect it. Do NOT create
+      or push the PR — only draft the description for the developer to use.
+    agent_mapping:
+      opencode: build
+
+  report_blocker:
+    introduction: Report the failure (only when tests fail)
+    type: straight
+    input:
+      from: [understand_issue, run_tests]
+    trigger:
+      when:
+        from: run_tests
+        contains: "SOME FAILED"
+    output:
+      schema: { failing: "string[]", diagnosis: "string", next_steps: "string[]" }
+    prompt: >
+      Tests are still failing. Do NOT draft a PR. Diagnose instead.
+
+      For each failing test:
+      - Is the failure a real remaining bug, or a problem in the fix's own test?
+      - What's the specific error and where does it originate?
+
+      Then report:
+      - Which tests fail and why
+      - Whether the original issue is partially fixed or not at all
+      - Concrete next steps to get to green (do not over-edit; hand back to the developer)
+    agent_mapping:
+      opencode: build
+
+workflow:
+  - understand_issue
+  - locate_code
+  - implement_fix
+  - run_tests
+  - write_pr
+  - report_blocker

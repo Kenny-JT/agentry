@@ -1,0 +1,118 @@
+# Conditional branch + loop test workflow
+# Tests: trigger.when (conditional skip), trigger.loop (iterative refinement)
+#
+# Flow:
+#   explore → triage → (detailed_analysis OR quick_summary) → refine_report → final_output
+#
+# triage classifies complexity as "complex" or "simple"
+# detailed_analysis runs only if triage says "complex"
+# quick_summary runs only if triage says "simple"
+# refine_report loops up to 2 iterations until output contains "FINALIZED"
+
+introduction: Conditional analysis with iterative refinement
+type: pipeline
+input:  { description: "Target project directory" }
+output: { description: "Refined project analysis report" }
+
+agents:
+  explore:
+    introduction: Discover project structure
+    type: straight
+    input:
+      extra_info: "Scan top-level files and directories"
+    output:
+      schema: {}
+    prompt: >
+      List the top-level files and directories in this project.
+      Return a brief summary. Be concise — no more than 10 lines.
+    agent_mapping:
+      opencode: explore
+
+  triage:
+    introduction: Classify project complexity
+    type: straight
+    input:
+      from: explore
+    output:
+      schema: {}
+    prompt: >
+      Based on the project exploration, classify this project's complexity.
+      If it has more than 5 source files or multiple packages, say "complex".
+      Otherwise say "simple".
+      Respond with ONLY the word "complex" or "simple", nothing else.
+    agent_mapping:
+      opencode: build
+
+  detailed_analysis:
+    introduction: Deep analysis for complex projects
+    type: straight
+    input:
+      from: explore
+    trigger:
+      when:
+        from: triage
+        contains: "complex"
+    output:
+      schema: { architecture: "string", key_patterns: "string[]" }
+    prompt: >
+      Perform a detailed architectural analysis of this project.
+      Identify key design patterns, module boundaries, and dependencies.
+      Keep it under 200 words.
+    agent_mapping:
+      opencode: explore
+
+  quick_summary:
+    introduction: Quick summary for simple projects
+    type: straight
+    input:
+      from: explore
+    trigger:
+      when:
+        from: triage
+        contains: "simple"
+    output:
+      schema: {}
+    prompt: >
+      Write a brief 2-3 sentence summary of this simple project.
+    agent_mapping:
+      opencode: build
+
+  refine_report:
+    introduction: Iteratively refine the final report
+    type: straight
+    input:
+      from: [detailed_analysis, quick_summary, triage]
+    trigger:
+      loop:
+        max: 2
+        exit_when:
+          contains: "FINALIZED"
+    output:
+      schema: {}
+    prompt: >
+      Based on all available analysis, write a concise project report (under 150 words).
+      When you are satisfied with the quality, end your response with the word "FINALIZED".
+      If this is your first attempt, write the report and add "FINALIZED" at the end.
+    agent_mapping:
+      opencode: build
+
+  final_output:
+    introduction: Format the final deliverable
+    type: straight
+    input:
+      from: refine_report
+    output:
+      schema: { title: "string", summary: "string", verdict: "string" }
+    prompt: >
+      Take the refined report and format it as a final deliverable.
+      Keep it professional and under 100 words.
+    agent_mapping:
+      opencode: build
+
+workflow:
+  - explore
+  - triage
+  - detailed_analysis
+  - quick_summary
+  - refine_report
+  - final_output

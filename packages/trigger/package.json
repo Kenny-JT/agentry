@@ -1,0 +1,23 @@
+{
+  "name": "@agentry/trigger",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "agentry-watch: starts a project's workflows by themselves when their `on:` triggers fire (docs/15).",
+  "bin": {
+    "agentry-watch": "./dist/agentry-watch.mjs"
+  },
+  "scripts": {
+    "build": "node build.mjs",
+    "typecheck": "tsc --noEmit",
+    "test": "node build.mjs && node --test test/*.test.mjs"
+  },
+  "dependencies": {
+    "@agentry/core": "workspace:*",
+    "yaml": "^2.6.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.0",
+    "esbuild": "^0.21.5"
+  }
+}

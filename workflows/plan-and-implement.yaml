@@ -1,0 +1,117 @@
+# Plan a feature, implement it, then review and fix until it passes.
+# Deliverable: implemented code on disk + .agentry/output/spec.md (the plan)
+#
+# Flow: understand → plan(spec.md) → implement → review (loop until APPROVED, max 3)
+# Uses: spec-as-handoff, review loop, fresh-context-per-phase
+
+introduction: Plan a feature from a request, implement it, and self-review until it passes
+type: pipeline
+input:  { description: "Feature request or change to implement" }
+output: { description: "Implemented code + a spec at .agentry/output/spec.md" }
+
+agents:
+  understand_request:
+    introduction: Explore the codebase and ground the request in reality
+    type: straight
+    input:
+      extra_info: "The user's feature request goes here"
+    output:
+      schema: { affected_files: "string[]", conventions: "string", constraints: "string[]" }
+    prompt: >
+      Before planning anything, understand the request AND the codebase it lands in.
+
+      Do this:
+      1. Restate the request in one precise sentence (what should be true when done)
+      2. Find the files this change will touch or sit next to (real paths)
+      3. Identify the conventions to follow: how similar features are structured here,
+         naming, error handling, test layout, the framework's idioms
+      4. List constraints: existing APIs that must not break, patterns to match, gotchas
+      5. List open questions where the request is ambiguous (state your assumed answer)
+
+      Be concrete. This feeds the planner — vague output here ruins the plan.
+    agent_mapping:
+      opencode: explore
+
+  plan_spec:
+    introduction: Write a concrete implementation spec
+    type: straight
+    input:
+      from: understand_request
+    output:
+      schema: { steps: "string[]", files_to_change: "string[]", test_plan: "string" }
+    prompt: >
+      Write a concrete implementation spec. Write it to `.agentry/output/spec.md`.
+
+      The spec must contain:
+      ## Goal (one paragraph: what we're building and the definition of done)
+      ## Approach (the chosen design + one sentence on why, not alternatives essay)
+      ## Changes (ordered list — for each: file path, what changes, why)
+      ## New Files (path + purpose + key exports/signatures)
+      ## Test Plan (what to test, which framework, happy + edge + error cases)
+      ## Risks (what could break, what to watch)
+
+      Rules:
+      - Follow the conventions and constraints from the exploration — do not invent a new style
+      - Be specific enough that the implementer needs zero further decisions
+      - No placeholders, no "TODO figure out later"
+    agent_mapping:
+      opencode: build
+
+  implement:
+    introduction: Implement the spec
+    type: straight
+    input:
+      from: [understand_request, plan_spec]
+    output:
+      schema: { changed_files: "string[]", summary: "string" }
+    prompt: >
+      Implement the spec at `.agentry/output/spec.md` exactly.
+
+      Rules:
+      - Follow the ordered changes in the spec; touch only the files it names
+      - Match existing codebase conventions (from the exploration)
+      - Write the tests described in the test plan
+      - No type-error suppression (no `as any`, `@ts-ignore`, etc.)
+      - No empty catch blocks; handle or propagate errors honestly
+      - If the spec turns out to be wrong mid-way, STOP and report the conflict
+        instead of silently improvising a different design
+
+      After implementing, list every file you changed and a one-line summary of each.
+    agent_mapping:
+      opencode: build
+
+  review_and_fix:
+    introduction: Review the implementation against the spec, fix issues, approve when ready
+    type: straight
+    input:
+      from: [plan_spec, implement]
+    trigger:
+      loop:
+        max: 3
+        exit_when:
+          contains: "APPROVED"
+    output:
+      schema: { verdict: "string", issues_fixed: "string[]" }
+    prompt: >
+      Review the implementation against the spec at `.agentry/output/spec.md`.
+      Check each item — do not skip:
+
+      1. Does the code do everything the spec's Goal and Changes require?
+      2. Are the tests from the Test Plan present AND do they actually run/pass?
+         (Run them with the project's test runner.)
+      3. Does it follow codebase conventions, or does it stick out?
+      4. Any type errors, lint errors, or diagnostics on the changed files?
+      5. Any introduced regressions, broken imports, or dead code?
+      6. Any forbidden patterns (suppressed type errors, empty catches)?
+
+      If ALL checks pass → respond with "APPROVED" and a one-line summary.
+      If ANY check fails → fix the issues in the code, then describe what you fixed.
+      Do not say APPROVED unless you actually ran the tests and verified every item.
+    agent_mapping:
+      opencode: build
+
+workflow:
+  - understand_request
+  - plan_spec
+  - implement
+  - review_and_fix

@@ -1,0 +1,48 @@
+# Compiles the Tauri shell when a pull request touches it. Path-filtered and therefore NOT a
+# required check (a required check that never starts would block every other PR).
+name: Desktop
+
+on:
+  pull_request:
+    paths:
+      - 'packages/app/src-tauri/**'
+      - '.github/workflows/desktop.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: desktop-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  cargo-check:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      # tauri::generate_context!() embeds ../dist at compile time, so the web build comes first
+      - name: Build the editor
+        run: pnpm build
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: packages/app/src-tauri -> target
+
+      - name: cargo check
+        working-directory: packages/app/src-tauri
+        run: cargo check --locked

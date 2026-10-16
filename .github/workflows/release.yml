@@ -1,0 +1,109 @@
+# Push a tag vX.Y.Z (after `node scripts/version.mjs set X.Y.Z` and a CHANGELOG entry are on main)
+# -> a DRAFT GitHub release with the opencode plugin, agentry-watch and the desktop installers.
+# Review the draft on GitHub, then press "Publish release".
+name: Release
+
+on:
+  push:
+    tags: ['v*.*.*']
+
+permissions:
+  contents: write
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      release_id: ${{ steps.release.outputs.id }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Tag matches the repo version
+        run: node scripts/version.mjs --check --expect "$GITHUB_REF_NAME"
+
+      - name: Bundle the plugin and agentry-watch
+        run: |
+          pnpm --filter @agentry/plugin check
+          pnpm --filter @agentry/trigger build
+          mkdir -p release
+          cp .opencode/plugins/agentry.js release/agentry.js
+          cp packages/trigger/dist/agentry-watch.mjs release/agentry-watch.mjs
+
+      - name: Notes from CHANGELOG.md
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          awk -v v="$version" '$0 ~ "^## \\[" v "\\]" {f=1; next} /^## \[/ {f=0} f' CHANGELOG.md > release/NOTES.md
+          if [ ! -s release/NOTES.md ]; then echo "CHANGELOG.md has no section for $version" >&2; exit 1; fi
+
+      - uses: softprops/action-gh-release@v3
+        id: release
+        with:
+          draft: true
+          prerelease: ${{ startsWith(github.ref_name, 'v0.') || contains(github.ref_name, '-') }}
+          name: Agentry ${{ github.ref_name }}
+          body_path: release/NOTES.md
+          files: |
+            release/agentry.js
+            release/agentry-watch.mjs
+
+  desktop:
+    needs: prepare
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            args: ''
+            targets: ''
+          - os: macos-latest
+            args: --target universal-apple-darwin
+            targets: aarch64-apple-darwin,x86_64-apple-darwin
+          - os: ubuntu-22.04
+            args: ''
+            targets: ''
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Linux build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf
+
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.targets }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: packages/app/src-tauri -> target
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - uses: tauri-apps/tauri-action@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: packages/app
+          releaseId: ${{ needs.prepare.outputs.release_id }}
+          args: ${{ matrix.args }}

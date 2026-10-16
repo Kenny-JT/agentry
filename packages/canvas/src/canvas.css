@@ -1,0 +1,1006 @@
+@import '@xyflow/react/dist/style.css';
+
+.agentry-canvas {
+  width: 100%;
+  height: 100%;
+  position: relative;
+  background: var(--agentry-color-bg-app);
+}
+
+.agentry-canvas .react-flow {
+  background: var(--agentry-color-bg-app);
+}
+
+.agentry-canvas .react-flow__background {
+  color: var(--agentry-color-border-subtle);
+}
+
+.agentry-canvas .react-flow__edge-path {
+  stroke: var(--agentry-color-border-strong);
+  stroke-width: 1.6;
+}
+
+/* Subtle per-agent-type edge tint (edge is colored by its SOURCE node's type).
+   Selection/hover rules below have higher specificity and intentionally win. */
+.agentry-canvas .react-flow__edge-path.is-type-straight {
+  stroke: var(--agentry-color-type-straight);
+}
+.agentry-canvas .react-flow__edge-path.is-type-reporter {
+  stroke: var(--agentry-color-type-reporter);
+}
+.agentry-canvas .react-flow__edge-path.is-type-documenter {
+  stroke: var(--agentry-color-type-documenter);
+}
+.agentry-canvas .react-flow__edge-path.is-type-branch {
+  stroke: var(--agentry-color-type-branch);
+}
+.agentry-canvas .react-flow__edge-path.is-type-subworkflow {
+  stroke: var(--agentry-color-type-subworkflow);
+}
+.agentry-canvas .react-flow__edge-path.is-type-input {
+  stroke: var(--agentry-color-type-input);
+}
+.agentry-canvas .react-flow__edge-path.is-type-output {
+  stroke: var(--agentry-color-type-output);
+}
+
+.agentry-canvas .react-flow__edge.selected .react-flow__edge-path,
+.agentry-canvas .react-flow__edge:hover .react-flow__edge-path {
+  stroke: var(--agentry-color-accent);
+  stroke-width: 2;
+}
+
+.agentry-canvas .react-flow__edge {
+  transition: opacity 120ms ease;
+}
+.agentry-canvas .react-flow__edge.is-dim {
+  opacity: 0.16;
+}
+.agentry-canvas .react-flow__edge.is-active .react-flow__edge-path {
+  stroke: var(--agentry-color-accent);
+  stroke-width: 2.6;
+}
+
+.agentry-canvas--run .react-flow__edge.animated .react-flow__edge-path {
+  stroke: var(--agentry-color-accent);
+}
+
+/* Gate chip on a branch out-edge: shows that port's route condition (or "else").
+   Positioned at the routed edge midpoint by OrthogonalEdge via EdgeLabelRenderer. */
+.agentry-edge__chip {
+  position: absolute;
+  padding: 1px 7px;
+  border: 1px solid var(--agentry-color-type-branch);
+  border-radius: 999px;
+  background: var(--agentry-color-bg-elevated);
+  color: var(--agentry-color-type-branch);
+  font-family: var(--agentry-font-mono);
+  font-size: 10.5px;
+  font-weight: var(--agentry-fw-medium);
+  line-height: 1.5;
+  white-space: nowrap;
+  pointer-events: none;
+  user-select: none;
+}
+
+.react-flow__edge.is-dim .agentry-edge__chip {
+  opacity: 0.16;
+}
+
+/* The real ReactFlow handle stays on the EXTENDED node edge (so the engine fans
+   edges there and routing is clean) but is visually invisible: the pin the user
+   sees is the decorative .agentry-node__pin drawn on the card edge, where the
+   fork trunk converges. This handle only carries connection behaviour + hit zone. */
+.agentry-canvas .agentry-handle {
+  width: 9px;
+  height: 9px;
+  border: none;
+  background: transparent;
+  pointer-events: all;
+}
+
+/* Decorative pin ON the visible card edge — the connection point the user reads,
+   centered on the card's left/right border where the edge fork converges. */
+.agentry-node__pin {
+  position: absolute;
+  top: 50%;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--agentry-color-bg-elevated);
+  border: 1.5px solid var(--agentry-color-border-strong);
+  pointer-events: none;
+  z-index: 1;
+  transition: border-color 0.12s ease;
+}
+
+.agentry-node__pin--in {
+  left: 0;
+  transform: translate(-50%, -50%);
+}
+
+.agentry-node__pin--out {
+  right: 0;
+  transform: translate(50%, -50%);
+}
+
+.agentry-canvas--edit .agentry-node:hover .agentry-node__pin {
+  border-color: var(--agentry-color-accent);
+}
+
+/* Enlarge the connection grab zone without changing the visible pin or the edge
+   anchor. A transparent ::before extends the handle's hit area: pseudo-elements
+   forward pointer events to their host handle and don't affect its bounding box,
+   so ReactFlow still starts the connection across this wider zone yet keeps
+   anchoring edges at the 9px pin center. Edit-mode only, so it never swallows
+   pointer events in run mode. Fixes pin grabs near the edge being misread as
+   node drags. */
+.agentry-canvas--edit .agentry-handle::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 24px;
+  height: 24px;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  pointer-events: all;
+}
+
+/* Shift the hit zone inward onto the visible card-edge pin (the handle itself
+   sits FORK_EXTENSION px further out), so a grab lands where the user aims. */
+.agentry-canvas--edit .react-flow__handle-right.agentry-handle::before {
+  transform: translate(-50%, -50%) translateX(calc(-1 * var(--agentry-fork-ext)));
+}
+
+.agentry-canvas--edit .react-flow__handle-left.agentry-handle::before {
+  transform: translate(-50%, -50%) translateX(var(--agentry-fork-ext));
+}
+
+.agentry-canvas--run .agentry-handle {
+  cursor: default;
+}
+
+/* Extra top/bottom handles: unobtrusive until hovered so the node stays clean. */
+.agentry-canvas .agentry-handle--side {
+  width: 7px;
+  height: 7px;
+  opacity: 0.5;
+}
+
+.agentry-canvas--edit .agentry-handle--side:hover {
+  opacity: 1;
+}
+
+.agentry-canvas--run .agentry-handle--side {
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* Transparent extension frame: the outer node reaches FORK_EXTENSION px past the
+   visible card on each side (padding set inline from the shared constant) so the
+   connection pins sit on the extended edge and the engine fans edges there, while
+   the fork is hand-drawn back to the card inside this band. The frame is
+   click-through so the empty band never blocks canvas panning; the card and pins
+   re-enable pointer events. */
+.agentry-node {
+  position: relative;
+  display: flex;
+  pointer-events: none;
+}
+
+.agentry-node__card {
+  position: relative;
+  min-width: 188px;
+  max-width: 240px;
+  padding: var(--agentry-space-base) var(--agentry-space-lg);
+  display: flex;
+  flex-direction: column;
+  gap: var(--agentry-space-md);
+  background: linear-gradient(
+    180deg,
+    var(--agentry-color-bg-elevated),
+    var(--agentry-color-bg-surface)
+  );
+  border: 1px solid var(--agentry-color-border-default);
+  border-radius: var(--agentry-radius-lg);
+  box-shadow: var(--agentry-shadow-md);
+  color: var(--agentry-color-text-primary);
+  font-family: var(--agentry-font-sans);
+  cursor: default;
+  pointer-events: auto;
+}
+
+.agentry-canvas--edit .agentry-node__card {
+  cursor: grab;
+}
+
+.agentry-canvas--edit .agentry-node:active .agentry-node__card {
+  cursor: grabbing;
+}
+
+.agentry-node.is-selected .agentry-node__card {
+  border-color: var(--agentry-color-accent);
+  box-shadow: var(--agentry-shadow-glow);
+}
+
+.agentry-node__number {
+  position: absolute;
+  top: -10px;
+  left: -10px;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 6px;
+  border-radius: var(--agentry-radius-pill);
+  background: var(--agentry-color-minimap-node);
+  border: 2px solid var(--agentry-color-bg-surface);
+  box-shadow: var(--agentry-shadow-sm);
+  color: #ffffff;
+  font-family: var(--agentry-font-mono);
+  font-size: var(--agentry-fs-sm);
+  font-weight: var(--agentry-fw-bold);
+  line-height: 1;
+}
+
+.agentry-node__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--agentry-space-base);
+}
+
+.agentry-node__type {
+  font-family: var(--agentry-font-mono);
+  font-size: var(--agentry-fs-xs);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--agentry-color-text-muted);
+}
+
+/* Node markers (D5 strict JSON, D4 join: any, run warnings). The group's
+   `margin-right: auto` keeps them hugging the type label while the state chip
+   stays pinned right in the space-between head. */
+.agentry-node__badges {
+  display: inline-flex;
+  gap: 4px;
+  margin-right: auto;
+  min-width: 0;
+}
+
+.agentry-node__badge {
+  padding: 1px 6px;
+  border-radius: var(--agentry-radius-pill);
+  border: 1px solid var(--agentry-color-accent-muted);
+  background: var(--agentry-color-bg-inset);
+  color: var(--agentry-color-accent);
+  font-family: var(--agentry-font-mono);
+  font-size: var(--agentry-fs-xs);
+  font-weight: var(--agentry-fw-semibold);
+  letter-spacing: 0.06em;
+  line-height: 1.4;
+}
+
+.agentry-node__badge--join {
+  border-color: color-mix(in srgb, var(--agentry-color-type-branch) 35%, transparent);
+  color: var(--agentry-color-type-branch);
+}
+
+.agentry-node__badge--warn {
+  border-color: color-mix(in srgb, var(--agentry-state-running) 40%, transparent);
+  color: var(--agentry-state-running);
+  cursor: help;
+}
+
+.agentry-node[data-type='straight'] .agentry-node__type {
+  color: var(--agentry-color-type-straight);
+}
+.agentry-node[data-type='reporter'] .agentry-node__type {
+  color: var(--agentry-color-type-reporter);
+}
+.agentry-node[data-type='branch'] .agentry-node__type {
+  color: var(--agentry-color-type-branch);
+}
+.agentry-node[data-type='sub-workflow'] .agentry-node__type {
+  color: var(--agentry-color-type-subworkflow);
+}
+.agentry-node[data-type='documenter'] .agentry-node__type {
+  color: var(--agentry-color-type-documenter);
+}
+
+/* ── Sub-workflow: subroutine node drawn as a flat hexagon — the straight card
+   with a shallow triangular point pushed out on each side (the in/out pins sit
+   at the two apexes). The hexagon is painted by two FRAME pseudo-elements (a
+   cyan rim ::before + the card-fill ::after inset 1.5px), with the card left
+   transparent and UNCLIPPED — so the number badge, pins and text are never
+   clipped, and routing/fork/minimap stay on the untouched rectangular box.
+   Extra horizontal padding clears the angled corners. */
+.agentry-node[data-type='sub-workflow'] {
+  --agentry-hex-point: 14px;
+}
+
+.agentry-node[data-type='sub-workflow']::before,
+.agentry-node[data-type='sub-workflow']::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: var(--agentry-fork-ext);
+  right: var(--agentry-fork-ext);
+  clip-path: polygon(
+    var(--agentry-hex-point) 0,
+    calc(100% - var(--agentry-hex-point)) 0,
+    100% 50%,
+    calc(100% - var(--agentry-hex-point)) 100%,
+    var(--agentry-hex-point) 100%,
+    0 50%
+  );
+  pointer-events: none;
+}
+
+.agentry-node[data-type='sub-workflow']::before {
+  background: var(--agentry-color-type-subworkflow);
+}
+
+.agentry-node[data-type='sub-workflow'].is-selected::before {
+  background: var(--agentry-color-accent);
+}
+
+.agentry-node[data-type='sub-workflow']::after {
+  top: 1.5px;
+  bottom: 1.5px;
+  left: calc(var(--agentry-fork-ext) + 1.5px);
+  right: calc(var(--agentry-fork-ext) + 1.5px);
+  background: linear-gradient(
+    180deg,
+    var(--agentry-color-bg-elevated),
+    var(--agentry-color-bg-surface)
+  );
+}
+
+.agentry-node[data-type='sub-workflow'] .agentry-node__card {
+  position: relative;
+  z-index: 1;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  padding-left: calc(var(--agentry-space-lg) + var(--agentry-hex-point));
+  padding-right: calc(var(--agentry-space-lg) + var(--agentry-hex-point));
+}
+
+/* ── Reporter: aggregator node — a straight card domed into a semicircle on its
+   RIGHT side, reading as "many report sources converge → one summary at the
+   apex". Pure visual: the single centered in/out pins keep the normal fan-in
+   fork, so N report edges tree-fork into the one left dot exactly like a
+   straight node, and the out pin sits at the semicircle's apex (right-center).
+   The right radius (~half a typical card height) rounds both right corners into
+   arcs that meet at the vertical center; extra right padding keeps the head row
+   clear of the curve. */
+.agentry-node[data-type='reporter'] .agentry-node__card,
+.agentry-node[data-type='documenter'] .agentry-node__card {
+  border-top-right-radius: 70px;
+  border-bottom-right-radius: 70px;
+  padding-right: var(--agentry-space-huge);
+}
+
+/* Documenter fork: convergence point (SVG right edge) anchored on the card's
+   left edge via an inline `left` (offset by the shared DOCUMENTER_FORK width in
+   AgentNode) so the fan splays into the reserved left buffer; vertically centered
+   on the node, behind the card, click-through. */
+.agentry-documenter-fork {
+  position: absolute;
+  top: 50%;
+  z-index: 0;
+  overflow: visible;
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+
+.agentry-documenter-fork path {
+  fill: none;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+  opacity: 0.85;
+}
+
+/* ── Branch: multi-out router drawn as a flat trapezoid opening to the right —
+   a short left edge (single in pin) widening to a tall right edge, where the
+   conditioned out-edges fan out as distinct ports (see OrthogonalEdge: a branch
+   source skips fork convergence). Same double-pseudo technique as sub-workflow
+   (orange rim ::before + fill ::after, card transparent & UNCLIPPED) so pins,
+   number and text are never clipped and the box stays rectangular. Top/bottom
+   padding clears the slanted edges. */
+.agentry-node[data-type='branch'] {
+  --agentry-tz-slant: 20px;
+}
+
+.agentry-node[data-type='branch']::before,
+.agentry-node[data-type='branch']::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: var(--agentry-fork-ext);
+  right: var(--agentry-fork-ext);
+  clip-path: polygon(
+    0 var(--agentry-tz-slant),
+    100% 0,
+    100% 100%,
+    0 calc(100% - var(--agentry-tz-slant))
+  );
+  pointer-events: none;
+}
+
+.agentry-node[data-type='branch']::before {
+  background: var(--agentry-color-type-branch);
+}
+
+.agentry-node[data-type='branch'].is-selected::before {
+  background: var(--agentry-color-accent);
+}
+
+.agentry-node[data-type='branch']::after {
+  top: 1.5px;
+  bottom: 1.5px;
+  left: calc(var(--agentry-fork-ext) + 1.5px);
+  right: calc(var(--agentry-fork-ext) + 1.5px);
+  background: linear-gradient(
+    180deg,
+    var(--agentry-color-bg-elevated),
+    var(--agentry-color-bg-surface)
+  );
+}
+
+.agentry-node[data-type='branch'] .agentry-node__card {
+  position: relative;
+  z-index: 1;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  padding-top: calc(var(--agentry-space-base) + var(--agentry-tz-slant));
+  padding-bottom: calc(var(--agentry-space-base) + var(--agentry-tz-slant));
+  padding-left: var(--agentry-space-xl);
+}
+
+.agentry-node[data-type='workflow-input'] .agentry-boundary__label {
+  color: var(--agentry-color-type-input);
+}
+.agentry-node[data-type='workflow-output'] .agentry-boundary__label {
+  color: var(--agentry-color-type-output);
+}
+
+/* ── Workflow I/O boundary ports (Phase-5 Vivado top-level pins). Small ~2x1
+   grid-cell tags holding just "IN"/"OUT" (the two boundary JSONs). INPUT points
+   RIGHT (emits into the workflow), OUTPUT points LEFT (collects the result).
+   Same double-pseudo frame as branch/sub-workflow (colored rim ::before + fill
+   ::after, card transparent & UNCLIPPED) so the label/pin never clip and the box
+   stays rectangular for routing/fork/minimap. */
+.agentry-boundary {
+  --agentry-bd-point: 10px;
+}
+
+.agentry-boundary::before,
+.agentry-boundary::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: var(--agentry-fork-ext);
+  right: var(--agentry-fork-ext);
+  pointer-events: none;
+}
+
+.agentry-boundary--input::before,
+.agentry-boundary--input::after {
+  clip-path: polygon(
+    0 0,
+    calc(100% - var(--agentry-bd-point)) 0,
+    100% 50%,
+    calc(100% - var(--agentry-bd-point)) 100%,
+    0 100%
+  );
+}
+
+.agentry-boundary--output::before,
+.agentry-boundary--output::after {
+  clip-path: polygon(
+    var(--agentry-bd-point) 0,
+    100% 0,
+    100% 100%,
+    var(--agentry-bd-point) 100%,
+    0 50%
+  );
+}
+
+.agentry-node[data-type='workflow-input']::before {
+  background: var(--agentry-color-type-input);
+}
+.agentry-node[data-type='workflow-output']::before {
+  background: var(--agentry-color-type-output);
+}
+
+.agentry-boundary.is-selected::before {
+  background: var(--agentry-color-accent);
+}
+
+/* Boundary selection lives on the pentagon rim (::before) above — suppress the
+   rectangular card glow/border so it doesn't leak past the tiny transparent card
+   as a ghost box. Same 3-class specificity as the base selected rule; this wins
+   by later source order. */
+.agentry-boundary.is-selected .agentry-node__card {
+  border-color: transparent;
+  box-shadow: none;
+}
+
+.agentry-boundary::after {
+  top: 1.5px;
+  bottom: 1.5px;
+  left: calc(var(--agentry-fork-ext) + 1.5px);
+  right: calc(var(--agentry-fork-ext) + 1.5px);
+  background: linear-gradient(
+    180deg,
+    var(--agentry-color-bg-elevated),
+    var(--agentry-color-bg-surface)
+  );
+}
+
+.agentry-boundary__card {
+  position: relative;
+  z-index: 1;
+  min-width: 0;
+  max-width: none;
+  width: 44px;
+  height: 22px;
+  padding: 0;
+  gap: 0;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+}
+
+.agentry-boundary--input .agentry-boundary__card {
+  padding-right: var(--agentry-bd-point);
+}
+.agentry-boundary--output .agentry-boundary__card {
+  padding-left: var(--agentry-bd-point);
+}
+
+.agentry-boundary__label {
+  font-family: var(--agentry-font-mono);
+  font-size: var(--agentry-fs-xs);
+  font-weight: var(--agentry-fw-bold);
+  letter-spacing: 0.06em;
+  line-height: 1;
+}
+
+/* ── IN-port trigger chip: the workflow's `on:` block (AgentNode TriggerBadge).
+   Hangs OUTSIDE the node box, left of the pentagon and vertically centred, with
+   a short stub wired into the port's flat side. Absolute + anchored past the
+   fork band, so the measured box that routing/collision/minimap read is
+   untouched. Click-through: triggers are edited in the Inspector. */
+.agentry-trigger {
+  --agentry-trigger-gap: 14px;
+  position: absolute;
+  top: 50%;
+  right: calc(100% - var(--agentry-fork-ext) + var(--agentry-trigger-gap));
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 190px;
+  height: 20px;
+  padding: 0 var(--agentry-space-base) 0 var(--agentry-space-md);
+  border: 1px solid color-mix(in srgb, var(--agentry-color-type-input) 40%, var(--agentry-color-border-default));
+  border-radius: var(--agentry-radius-pill);
+  background: var(--agentry-color-bg-elevated);
+  box-shadow: var(--agentry-shadow-sm);
+  color: var(--agentry-color-text-secondary);
+  font-family: var(--agentry-font-sans);
+  font-size: var(--agentry-fs-xs);
+  font-weight: var(--agentry-fw-medium);
+  line-height: 1;
+  white-space: nowrap;
+  transform: translateY(-50%);
+  pointer-events: none;
+  user-select: none;
+}
+
+.agentry-trigger::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 100%;
+  width: var(--agentry-trigger-gap);
+  height: 1.5px;
+  background: color-mix(in srgb, var(--agentry-color-type-input) 70%, transparent);
+  transform: translateY(-50%);
+}
+
+.agentry-trigger svg {
+  flex: none;
+  color: var(--agentry-color-type-input);
+  stroke-width: 1.9;
+}
+
+.agentry-trigger__text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.agentry-trigger--stack {
+  gap: var(--agentry-space-sm);
+  padding: 0 var(--agentry-space-md);
+}
+
+.agentry-trigger.is-invalid {
+  border-color: color-mix(in srgb, var(--agentry-state-failed) 50%, var(--agentry-color-border-default));
+}
+
+.agentry-trigger svg.is-invalid {
+  color: var(--agentry-state-failed);
+}
+
+.agentry-node__state {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--agentry-space-md);
+  font-size: var(--agentry-fs-xs);
+  font-weight: var(--agentry-fw-medium);
+  color: var(--agentry-color-text-secondary);
+}
+
+/* State badge is a run-mode concept; the editor stays neutral. */
+.agentry-canvas--edit .agentry-node__state {
+  display: none;
+}
+
+.agentry-node__dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--agentry-state-pending);
+}
+
+.agentry-node--done .agentry-node__dot {
+  background: var(--agentry-state-done);
+}
+.agentry-node--running .agentry-node__dot {
+  background: var(--agentry-state-running);
+}
+.agentry-node--failed .agentry-node__dot {
+  background: var(--agentry-state-failed);
+}
+.agentry-node--skipped .agentry-node__dot {
+  background: var(--agentry-state-skipped);
+}
+
+.agentry-canvas--run .agentry-node--running .agentry-node__dot {
+  animation: agentry-pulse 1.1s ease-in-out infinite;
+}
+
+@keyframes agentry-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+/* State-driven node border (run mode only). */
+.agentry-canvas--run .agentry-node--done .agentry-node__card {
+  border-color: var(--agentry-state-done);
+  box-shadow: 0 0 0 1px var(--agentry-state-done-soft), var(--agentry-shadow-md);
+}
+.agentry-canvas--run .agentry-node--running .agentry-node__card {
+  border-color: var(--agentry-state-running);
+  box-shadow: 0 0 0 1px var(--agentry-state-running-soft), var(--agentry-shadow-md);
+}
+.agentry-canvas--run .agentry-node--failed .agentry-node__card {
+  border-color: var(--agentry-state-failed);
+  box-shadow: 0 0 0 1px var(--agentry-state-failed-soft), var(--agentry-shadow-md);
+}
+/* Skipped = bypassed by a branch: the whole card dims (muted, not alarming),
+   unlike failed which keeps full opacity with a red border. */
+.agentry-canvas--run .agentry-node--skipped {
+  opacity: 0.55;
+}
+.agentry-canvas--run .agentry-node--skipped .agentry-node__card {
+  border-style: dashed;
+  border-color: var(--agentry-state-skipped);
+  box-shadow: 0 0 0 1px var(--agentry-state-skipped-soft), var(--agentry-shadow-sm);
+}
+
+.agentry-node__title {
+  font-size: var(--agentry-fs-base);
+  font-weight: var(--agentry-fw-semibold);
+  line-height: 1.3;
+}
+
+.agentry-node__id {
+  font-family: var(--agentry-font-mono);
+  font-size: var(--agentry-fs-xs);
+  color: var(--agentry-color-text-muted);
+}
+
+.agentry-node__mapping {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--agentry-space-md);
+  align-self: flex-start;
+  padding: 2px var(--agentry-space-base);
+  background: var(--agentry-color-bg-inset);
+  border: 1px solid var(--agentry-color-border-subtle);
+  border-radius: var(--agentry-radius-sm);
+}
+
+.agentry-node__mapping-key {
+  font-family: var(--agentry-font-mono);
+  font-size: 10px;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--agentry-color-text-muted);
+}
+
+.agentry-node__mapping-val {
+  font-family: var(--agentry-font-mono);
+  font-size: var(--agentry-fs-xs);
+  color: var(--agentry-color-accent);
+}
+
+.agentry-canvas .agentry-minimap {
+  width: 252px;
+  height: 172px;
+  margin: 12px;
+  padding: 6px;
+  box-sizing: border-box;
+  background: var(--agentry-color-bg-base);
+  border: 1px solid var(--agentry-color-border-subtle);
+  border-radius: var(--agentry-radius-md);
+  box-shadow: var(--agentry-shadow-md);
+  overflow: hidden;
+}
+
+.agentry-minimap__svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  cursor: pointer;
+  touch-action: none;
+}
+
+.agentry-minimap__edge {
+  stroke: var(--agentry-color-minimap-edge);
+  stroke-width: 1.4;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+  fill: none;
+}
+
+.agentry-minimap__node {
+  fill: var(--agentry-color-minimap-node);
+  stroke: var(--agentry-color-minimap-node-border);
+  stroke-width: 1.4;
+  vector-effect: non-scaling-stroke;
+}
+
+/* Type-colored minimap nodes (faint fill + type-colored border) so the overview
+   mirrors the canvas's per-type shape AND color. */
+.agentry-minimap__node.is-type-straight {
+  fill: var(--agentry-color-type-straight);
+  stroke: var(--agentry-color-type-straight);
+  fill-opacity: 0.28;
+}
+.agentry-minimap__node.is-type-branch {
+  fill: var(--agentry-color-type-branch);
+  stroke: var(--agentry-color-type-branch);
+  fill-opacity: 0.28;
+}
+.agentry-minimap__node.is-type-reporter {
+  fill: var(--agentry-color-type-reporter);
+  stroke: var(--agentry-color-type-reporter);
+  fill-opacity: 0.28;
+}
+.agentry-minimap__node.is-type-documenter {
+  fill: var(--agentry-color-type-documenter);
+  stroke: var(--agentry-color-type-documenter);
+  fill-opacity: 0.28;
+}
+.agentry-minimap__node.is-type-subworkflow {
+  fill: var(--agentry-color-type-subworkflow);
+  stroke: var(--agentry-color-type-subworkflow);
+  fill-opacity: 0.28;
+}
+.agentry-minimap__node.is-type-input {
+  fill: var(--agentry-color-type-input);
+  stroke: var(--agentry-color-type-input);
+  fill-opacity: 0.28;
+}
+.agentry-minimap__node.is-type-output {
+  fill: var(--agentry-color-type-output);
+  stroke: var(--agentry-color-type-output);
+  fill-opacity: 0.28;
+}
+
+.agentry-minimap__label {
+  fill: var(--agentry-color-minimap-label);
+  font-family: var(--agentry-font-mono);
+  font-weight: var(--agentry-fw-semibold);
+  text-anchor: middle;
+  dominant-baseline: central;
+  pointer-events: none;
+  user-select: none;
+}
+
+.agentry-minimap__viewport {
+  fill: var(--agentry-color-minimap-viewport-fill);
+  stroke: var(--agentry-color-minimap-viewport-border);
+  stroke-width: 1.5;
+  vector-effect: non-scaling-stroke;
+  pointer-events: none;
+}
+
+.agentry-canvas .react-flow__controls {
+  border-radius: var(--agentry-radius-md);
+  overflow: hidden;
+  box-shadow: var(--agentry-shadow-md);
+}
+
+.agentry-canvas .react-flow__controls-button {
+  background: var(--agentry-color-bg-surface);
+  border-bottom: 1px solid var(--agentry-color-border-subtle);
+  color: var(--agentry-color-text-secondary);
+  fill: var(--agentry-color-text-secondary);
+}
+
+.agentry-canvas .react-flow__controls-button:hover {
+  background: var(--agentry-color-bg-elevated);
+}
+
+.agentry-canvas .react-flow__controls-button svg {
+  fill: currentColor;
+}
+
+/* Edge hover preview (half-1): the "magnifier lens" that explodes an edge into
+   one straight wire per upstream output field. Frosted glass surface (backdrop
+   blur + translucent fill), hairline rim, top sheen and a deep soft shadow.
+   Screen-space (portaled, fixed) and interactive (pointer-events auto); the
+   fade duration mirrors PREVIEW_FADE_MS in WorkflowCanvas.tsx. --lens-accent is
+   set inline from the source node's type color. */
+.agentry-edge-preview {
+  position: fixed;
+  z-index: 1000;
+  padding: 14px;
+  border-radius: var(--agentry-radius-xl);
+  background: var(--agentry-lens-bg);
+  -webkit-backdrop-filter: blur(12px) saturate(1.4);
+  backdrop-filter: blur(12px) saturate(1.4);
+  box-shadow:
+    var(--agentry-lens-shadow),
+    inset 0 0 0 1px var(--agentry-lens-rim),
+    inset 0 1px 0 0 var(--agentry-lens-sheen);
+  color: var(--agentry-color-text-primary);
+  pointer-events: auto;
+  user-select: none;
+  transition:
+    opacity 120ms ease,
+    transform 120ms ease;
+  will-change: opacity, transform;
+}
+
+/* Faint glass sheen swept from the top-left, for the lens/vignette feel. */
+.agentry-edge-preview::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: radial-gradient(120% 80% at 12% 0%, var(--agentry-lens-sheen), transparent 62%);
+  pointer-events: none;
+}
+
+.agentry-edge-preview__lens {
+  position: relative;
+}
+
+.agentry-edge-preview__wires {
+  position: absolute;
+  inset: 0;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.agentry-edge-preview__wire {
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  transition:
+    stroke 120ms ease,
+    opacity 120ms ease;
+}
+
+.agentry-edge-preview__wire.is-on {
+  stroke: var(--lens-accent);
+}
+
+.agentry-edge-preview__wire.is-off {
+  stroke: var(--agentry-color-text-secondary);
+  opacity: 0.6;
+}
+
+/* Full-width invisible hit target per wire; the pill is the visible label. */
+.agentry-edge-preview__row {
+  position: absolute;
+  left: 0;
+  right: 0;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 22px;
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: none;
+  -webkit-appearance: none;
+  appearance: none;
+  cursor: pointer;
+}
+
+/* Read-only rows (boundary IN/OUT edges): same field view, no toggle affordance. */
+.agentry-edge-preview__row.is-static {
+  cursor: default;
+}
+
+.agentry-edge-preview__row:focus-visible {
+  outline: none;
+}
+
+.agentry-edge-preview__row:focus-visible .agentry-edge-preview__pill {
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--lens-accent) 40%, transparent);
+}
+
+.agentry-edge-preview__pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 10px;
+  border-radius: var(--agentry-radius-pill);
+  background: var(--agentry-color-bg-elevated);
+  border: 1px solid var(--agentry-color-border-default);
+  color: var(--agentry-color-text-primary);
+  font-family: var(--agentry-font-sans);
+  font-size: var(--agentry-fs-xs);
+  font-weight: var(--agentry-fw-medium);
+  line-height: 1.5;
+  white-space: nowrap;
+  transition:
+    color 120ms ease,
+    border-color 120ms ease,
+    background 120ms ease,
+    box-shadow 120ms ease;
+}
+
+.agentry-edge-preview__row.is-on .agentry-edge-preview__pill {
+  border-color: color-mix(in srgb, var(--lens-accent) 32%, transparent);
+}
+
+.agentry-edge-preview__row.is-on:hover .agentry-edge-preview__pill {
+  border-color: color-mix(in srgb, var(--lens-accent) 55%, transparent);
+}
+
+.agentry-edge-preview__row.is-off .agentry-edge-preview__pill {
+  background: var(--agentry-color-bg-surface);
+  border-color: var(--agentry-color-border-default);
+  color: var(--agentry-color-text-secondary);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .agentry-edge-preview {
+    transition: none;
+  }
+}

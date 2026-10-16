@@ -1,0 +1,23 @@
+{
+  "name": "@agentry/plugin",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Agentry opencode plugin (runtime + live panel). Source of truth for .opencode/plugins/agentry.js, which `pnpm build` bundles from src/ together with @agentry/core and @agentry/design.",
+  "scripts": {
+    "build": "node build.mjs",
+    "check": "node build.mjs --check",
+    "typecheck": "tsc --noEmit",
+    "test": "node --test test/*.test.mjs"
+  },
+  "dependencies": {
+    "@agentry/core": "workspace:*",
+    "@agentry/design": "workspace:*",
+    "@opencode-ai/plugin": "1.18.30",
+    "yaml": "^2.6.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.0",
+    "esbuild": "^0.21.5"
+  }
+}
