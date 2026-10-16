@@ -57,6 +57,7 @@ const TYPE_ACCENT: Record<AgentType, string> = {
   reporter: 'var(--agentry-color-type-reporter)',
   documenter: 'var(--agentry-color-type-documenter)',
   'sub-workflow': 'var(--agentry-color-type-subworkflow)',
+  tool: 'var(--agentry-color-type-tool)',
   'workflow-input': 'var(--agentry-color-type-input)',
   'workflow-output': 'var(--agentry-color-type-output)',
 };

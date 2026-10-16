@@ -270,13 +270,15 @@ export function graphToWorkflow(
     const input = mergeInput(def, sources.get(id), selectSources.get(id));
     const branch = def.type === 'branch' ? branchFields(id, def, edges, byId) : undefined;
     const isSub = def.type === 'sub-workflow';
+    const isTool = def.type === 'tool';
     agents[id] = {
       ...(def.introduction !== undefined ? { introduction: def.introduction } : {}),
       ...(def.type !== undefined ? { type: def.type } : {}),
       ...(input ? { input } : {}),
       output: def.output,
       ...(def.tech_stack ? { tech_stack: def.tech_stack } : {}),
-      ...(isSub ? {} : { prompt: def.prompt ?? '', agent_mapping: def.agent_mapping ?? { opencode: 'build' } }),
+      ...(isTool && def.tool ? { tool: def.tool } : {}),
+      ...(isSub || isTool ? {} : { prompt: def.prompt ?? '', agent_mapping: def.agent_mapping ?? { opencode: 'build' } }),
       ...(def.trigger ? { trigger: def.trigger } : {}),
       ...(branch?.branch_on ? { branch_on: branch.branch_on } : {}),
       ...(branch?.routes ? { routes: branch.routes } : {}),
@@ -422,6 +424,8 @@ export function isJsonOut(
   const self = nodes.find((node) => node.id === nodeId);
   if (!self || isBoundaryId(nodeId)) return false;
   if (self.data.definition.type === 'branch') return true;
+  // a tool's output is JSON by construction — nothing is enforced on it at run time
+  if (self.data.definition.type === 'tool') return false;
   return edges.some(
     (edge) =>
       edge.source === nodeId &&

@@ -29,6 +29,7 @@ export const PANEL_TOKENS_CSS = `:root {
   --agentry-color-type-input: #3fb950;
   --agentry-color-type-output: #f778ba;
   --agentry-color-type-documenter: color-mix(in srgb, var(--agentry-color-type-reporter) 60%, var(--agentry-color-type-subworkflow));
+  --agentry-color-type-tool: color-mix(in srgb, var(--agentry-color-type-straight) 45%, var(--agentry-color-text-secondary));
   --agentry-state-done: #3fb950;
   --agentry-state-running: #e3b341;
   --agentry-state-pending: #6e7681;

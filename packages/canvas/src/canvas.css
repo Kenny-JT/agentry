@@ -37,6 +37,9 @@
 .agentry-canvas .react-flow__edge-path.is-type-subworkflow {
   stroke: var(--agentry-color-type-subworkflow);
 }
+.agentry-canvas .react-flow__edge-path.is-type-tool {
+  stroke: var(--agentry-color-type-tool);
+}
 .agentry-canvas .react-flow__edge-path.is-type-input {
   stroke: var(--agentry-color-type-input);
 }
@@ -309,6 +312,37 @@
 }
 .agentry-node[data-type='documenter'] .agentry-node__type {
   color: var(--agentry-color-type-documenter);
+}
+.agentry-node[data-type='tool'] .agentry-node__type {
+  color: var(--agentry-color-type-tool);
+}
+
+/* ── Tool: a deterministic step with no model. Same box as a straight node so
+   routing / fork / minimap are untouched, but square corners, a flat (no
+   gradient) fill and a tinted dashed edge read "machine, not agent"; the
+   mapping chip carries the kind glyph + label (GET / read / write / script). */
+.agentry-node[data-type='tool'] .agentry-node__card {
+  border-radius: var(--agentry-radius-sm);
+  border-style: dashed;
+  border-color: color-mix(in srgb, var(--agentry-color-type-tool) 55%, var(--agentry-color-border-default));
+  background: var(--agentry-color-bg-surface);
+}
+
+.agentry-node[data-type='tool'].is-selected .agentry-node__card {
+  border-style: solid;
+}
+
+.agentry-node[data-type='tool'] .agentry-node__mapping {
+  border-color: color-mix(in srgb, var(--agentry-color-type-tool) 35%, var(--agentry-color-border-subtle));
+}
+
+.agentry-node[data-type='tool'] .agentry-node__mapping-val {
+  color: var(--agentry-color-type-tool);
+}
+
+.agentry-node__tool-glyph {
+  display: inline-flex;
+  color: var(--agentry-color-type-tool);
 }
 
 /* ── Sub-workflow: subroutine node drawn as a flat hexagon — the straight card
@@ -816,6 +850,11 @@
 .agentry-minimap__node.is-type-subworkflow {
   fill: var(--agentry-color-type-subworkflow);
   stroke: var(--agentry-color-type-subworkflow);
+  fill-opacity: 0.28;
+}
+.agentry-minimap__node.is-type-tool {
+  fill: var(--agentry-color-type-tool);
+  stroke: var(--agentry-color-type-tool);
   fill-opacity: 0.28;
 }
 .agentry-minimap__node.is-type-input {

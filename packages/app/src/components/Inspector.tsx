@@ -15,6 +15,7 @@ import type {
   RouteCondition,
   ScheduleTrigger,
   TechStack,
+  ToolSpec,
   Trigger,
   TriggerKind,
   TriggerProblem,
@@ -33,8 +34,9 @@ import {
 } from './icons';
 import { clampDockedWidth, startPointerDrag } from '../inspectorLayout';
 import type { InspectorPlacement } from '../inspectorLayout';
+import { defaultToolSpec, ToolSection, toolSchemaFor } from './ToolSection';
 
-const AGENT_TYPES: readonly AgentType[] = ['straight', 'branch', 'reporter', 'documenter', 'sub-workflow'];
+const AGENT_TYPES: readonly AgentType[] = ['straight', 'branch', 'reporter', 'documenter', 'sub-workflow', 'tool'];
 
 export type IncomingField = { key: string; type: string };
 export type IncomingSource = { id: string; label: string; fields: IncomingField[] };
@@ -160,14 +162,23 @@ function cleanOutput(output: AgentOutput): AgentOutput {
   return next;
 }
 
+/** Drop the keys a blank field leaves behind so the exported `tool:` block holds only what was set. */
+function cleanToolSpec(spec: ToolSpec | undefined): ToolSpec {
+  const base = spec ?? defaultToolSpec('http');
+  const entries = Object.entries(base).filter(([, value]) => value !== undefined && value !== '' && value !== false);
+  return Object.fromEntries(entries) as unknown as ToolSpec;
+}
+
 function cleanDefinition(def: AgentDefinition): AgentDefinition {
   const isSub = def.type === 'sub-workflow';
+  const isTool = def.type === 'tool';
   const out: AgentDefinition = {
     introduction: def.introduction,
     type: def.type,
     output: cleanOutput(def.output),
   };
-  if (!isSub) {
+  if (isTool) out.tool = cleanToolSpec(def.tool);
+  else if (!isSub) {
     out.prompt = def.prompt ?? '';
     out.agent_mapping = def.agent_mapping ?? { opencode: 'build' };
   }
@@ -518,7 +529,17 @@ function InspectorForm({
             <select
               className="agentry-select"
               value={def.type ?? 'straight'}
-              onChange={(event) => setField({ type: event.target.value as AgentType })}
+              onChange={(event) => {
+                const type = event.target.value as AgentType;
+                if (type !== 'tool' || def.tool) {
+                  setField({ type });
+                  return;
+                }
+                // becoming a tool: start from an HTTP spec and the schema it always produces
+                const rows = schemaToRows(toolSchemaFor('http'));
+                setSchemaRows(rows);
+                emit({ ...def, type, tool: defaultToolSpec('http') }, rows);
+              }}
             >
               {AGENT_TYPES.map((type) => (
                 <option key={type} value={type}>
@@ -528,7 +549,7 @@ function InspectorForm({
             </select>
           </label>
 
-          {def.type !== 'sub-workflow' && (
+          {def.type !== 'sub-workflow' && def.type !== 'tool' && (
             <>
               <label className="agentry-field">
                 <span className="agentry-field__label">opencode agent</span>
@@ -553,6 +574,22 @@ function InspectorForm({
             </>
           )}
         </section>
+
+        {def.type === 'tool' && (
+          <ToolSection
+            spec={def.tool ?? defaultToolSpec('http')}
+            incoming={incoming}
+            onChange={(tool) => {
+              if (tool.kind === def.tool?.kind) {
+                setField({ tool });
+                return;
+              }
+              const rows = schemaToRows(toolSchemaFor(tool.kind));
+              setSchemaRows(rows);
+              emit({ ...def, tool }, rows);
+            }}
+          />
+        )}
 
         <section className="agentry-section">
           <span className="agentry-section__title">Input</span>
@@ -765,7 +802,7 @@ function InspectorForm({
           </section>
         )}
 
-        {def.type !== 'sub-workflow' && (
+        {def.type !== 'sub-workflow' && def.type !== 'tool' && (
           <details className="agentry-collapse">
             <summary>Tech stack</summary>
             <div className="agentry-collapse__body">

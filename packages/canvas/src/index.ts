@@ -1,6 +1,6 @@
 export { WorkflowCanvas } from './WorkflowCanvas';
 export type { WorkflowCanvasProps } from './WorkflowCanvas';
-export { AgentNode } from './AgentNode';
+export { AgentNode, ToolGlyph } from './AgentNode';
 export { EdgePreview } from './EdgePreview';
 export type { EdgePreviewField, EdgePreviewProps } from './EdgePreview';
 export { OrthogonalEdge } from './OrthogonalEdge';

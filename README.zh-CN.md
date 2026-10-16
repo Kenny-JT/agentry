@@ -52,6 +52,7 @@ https://github.com/user-attachments/assets/0ca33f9b-70fd-4dce-b958-42e703f32c6f
 
 - **编辑器**：桌面应用（Tauri），也能在浏览器里用。连线以直角绕开节点，拖动节点时实时跟着走。每个节点都有属性面板；引用断了、必需字段没有任何步骤产出这类问题，编辑时就会提示。支持 YAML 导入导出、本地历史和 15 套配色。
 - **控制流**：按节点输出里的某个字段，从几个下一步里选一个走；上游输出满足条件才执行某一步；一步重复执行，直到输出表示完成为止（有次数上限）；第一个上游完成就继续，或者等全部完成；一条连线上只传部分字段；把整个 workflow 当成一个节点嵌进来。
+- **工具步骤**：不经过模型的步骤：发 HTTP 请求、读写项目里的文件、运行脚本。它们的输出是 JSON，后面的步骤和分支可以直接用里面的字段。
 - **运行时**：opencode 插件并行执行互不依赖的步骤，把每一步的输出和日志写到 `.agentry/runs/` 下，能从最近的检查点续跑，在独立窗口里打开实时面板，最后还能生成一份 Markdown 报告，写清每一步做了什么。
 - **在编辑器里看运行**：让编辑器指向你的项目，运行时就在你画图的那块画布上逐个点亮。
 - **触发器**：`agentry-watch` 会在这些时候自动启动 workflow：文件夹里来了新文件、到了设定时间、网页或 Gmail 收件箱有变化、你 push 到了某个 git 分支。
@@ -106,10 +107,39 @@ workflow: [find_bugs, check_security, summarize]
 | `trigger.when` | 上游输出包含或等于某个值时才执行这一步，否则跳过。 |
 | `trigger.loop` | 重复执行这一步，直到 `exit_when` 满足，最多 `max` 次。 |
 | `type: branch`、`branch_on`、`routes` | 读取这一步输出里的一个字段，走第一条条件满足的路线。 |
+| `type: tool`、`tool` | 不经过模型的步骤，见下面的[工具步骤](#工具步骤)。 |
 | `on` | 让 workflow 自己启动：`file`、`schedule`、`web`、`mail` 或 `git`。 |
 | `workflow` | 所有步骤的 id，也是显示顺序。没列进来的步骤不会运行。 |
 
 完整说明见 [`packages/core/src/workflow.ts`](packages/core/src/workflow.ts) 里带注释的类型定义。
+
+### 工具步骤
+
+`type: tool` 的步骤不经过模型就能完成。把下面这一步加到上面的例子里，就能把审查意见存成文件：
+
+```yaml
+  save_review:
+    type: tool
+    input: { from: summarize }
+    tool:
+      kind: write_file
+      path: reviews/latest.md
+      content: "{summarize.comment}"
+    output: { schema: { path: string, bytes: number, mode: string } }
+```
+
+| `kind` | 字段 | 输出 |
+|---|---|---|
+| `http` | `url`、`method`、`headers`、`body`、`timeout_s`、`allow_failure` | `status`、`ok`、`content_type`、`body` |
+| `read_file` | `path` | `path`、`bytes`、`content`；文件是 JSON 时还有 `json` |
+| `write_file` | `path`、`content`、`mode`（`overwrite` 或 `append`） | `path`、`bytes`、`mode` |
+| `script` | `command`、`cwd`、`timeout_s`、`allow_failure` | `exit_code`、`stdout`、`stderr`；stdout 是 JSON 时还有 `result` |
+
+- `{step_id}` 填入某个上游步骤的完整输出，`{step_id.field}` 填入其中一个字段，`{input}` 填入这次运行的输入。在 `url` 里，填入的值会做 URL 编码，除非整个 URL 就是一个引用。
+- 文件路径和脚本的 `cwd` 必须在项目目录之内，指向外面的路径会让这一步失败。
+- 写成列表的 `command` 不经过 shell 直接运行，每一项都可以包含引用；写成字符串的 `command` 在 shell 里运行，并且永远不会被上游输出填充——脚本改从 stdin 读取 JSON 格式的运行输入和上游输出。在 Windows 上，`npm`、`pnpm`、`npx` 需要用字符串形式。
+- 脚本以你自己的用户权限运行，和你亲手启动的脚本一样。
+- HTTP 状态码不是 2xx、或脚本退出码不为 0 时，这一步失败，除非设了 `allow_failure: true`。超时一定失败，默认 HTTP 30 秒、脚本 120 秒。`read_file` 最多读 2 MB；非 JSON 的 HTTP 响应体在 256 KB 处截断，脚本输出在 64 KB 处截断。
 
 ## 让 workflow 自动启动
 

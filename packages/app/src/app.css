@@ -469,6 +469,11 @@ button {
   font-size: var(--agentry-fs-md);
 }
 
+.agentry-agentcard__glyph--tool {
+  background: color-mix(in srgb, var(--agentry-color-type-tool) 14%, transparent);
+  color: var(--agentry-color-type-tool);
+}
+
 .agentry-agentcard__body {
   flex: 1;
   min-width: 0;

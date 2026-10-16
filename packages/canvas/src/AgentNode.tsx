@@ -1,8 +1,8 @@
 import { Handle, Position, useEdges, useNodes } from '@xyflow/react';
 import type { NodeProps } from '@xyflow/react';
 import type { CSSProperties } from 'react';
-import { activeTriggerKinds, checkTriggers, describeTrigger } from '@agentry/core';
-import type { WorkflowTriggers } from '@agentry/core';
+import { activeTriggerKinds, checkTriggers, describeTrigger, toolLabel } from '@agentry/core';
+import type { ToolKind, ToolSpec, WorkflowTriggers } from '@agentry/core';
 import { nodeStateLabel } from '@agentry/design';
 import { orthogonalPath } from './backEdge';
 import { DOCUMENTER_FORK, FORK_EXTENSION } from './fork';
@@ -22,6 +22,42 @@ const EXTENSION_STYLE = {
 
 const isBoundaryType = (type: AgentFlowNode['data']['definition']['type']): boolean =>
   type === 'workflow-input' || type === 'workflow-output';
+
+const TOOL_GLYPH_PATH: Record<ToolKind, string> = {
+  http: 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM3 12h18M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18',
+  read_file: 'M6 3h8l4 4v14H6zM14 3v4h4M9 12h6M9 16h6',
+  write_file: 'M6 3h8l4 4v14H6zM14 3v4h4M9 15l6-6 2 2-6 6H9z',
+  script: 'M4 5h16v14H4zM7 9l3 3-3 3M12 15h5',
+};
+
+const toolChipKey = (kind: ToolKind | undefined): string =>
+  kind === 'read_file' || kind === 'write_file' ? 'file' : kind ?? 'tool';
+
+function toolChipValue(tool: ToolSpec | undefined): string {
+  if (tool?.kind !== 'script') return toolLabel(tool);
+  const first = (Array.isArray(tool.command) ? tool.command[0] : tool.command.trim().split(/\s+/)[0]) ?? '';
+  const program = first.split(/[\\/]/).pop() ?? first;
+  return program.length > 16 ? `${program.slice(0, 15)}…` : program || 'script';
+}
+
+export function ToolGlyph({ kind, size = 11 }: { kind: ToolKind; size?: number }) {
+  return (
+    <svg
+      className="agentry-node__tool-glyph"
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d={TOOL_GLYPH_PATH[kind]} />
+    </svg>
+  );
+}
 
 const DOC_FORK_H = 120;
 const DOC_FORK_CORNER = 6;
@@ -186,6 +222,12 @@ export function AgentNode({ id, data, selected }: NodeProps<AgentFlowNode>) {
           <div className="agentry-node__mapping">
             <span className="agentry-node__mapping-key">steps</span>
             <code className="agentry-node__mapping-val">{embeddedSteps || '—'}</code>
+          </div>
+        ) : agentType === 'tool' ? (
+          <div className="agentry-node__mapping" title="Runs without a model">
+            {definition.tool && <ToolGlyph kind={definition.tool.kind} />}
+            <span className="agentry-node__mapping-key">{toolChipKey(definition.tool?.kind)}</span>
+            <code className="agentry-node__mapping-val">{toolChipValue(definition.tool)}</code>
           </div>
         ) : (
           <div className="agentry-node__mapping">

@@ -23,11 +23,13 @@ import {
   sliceUpstream,
   strictJsonNodes,
   stripJsonFences,
+  toolAgentLabel,
   validateWorkflow as lintWorkflow,
 } from "@agentry/core"
 import type { AgentDefinition, Checkpoint, NodeState, SelectFallback, Workflow, WorkflowEvent } from "@agentry/core"
 import { THEMES } from "@agentry/design"
 import { PANEL_TOKENS_CSS } from "./panelTokens"
+import { runTool, ToolError } from "./tools"
 
 const PANEL_FILE = ".agentry/panel.json" // App-side discovery file (docs/12 D1 phase 1)
 const REPORT_FILE = "log.md" // whole-run report the documenter writes beside the node artifacts (D19)
@@ -810,6 +812,8 @@ interface RunCtx {
   client: OpencodeClient
   sessionId: string
   runId: string
+  /** Project directory the plugin was loaded for — tool node paths are confined to it. */
+  directory: string
   runDir: string
   workflow: Workflow
   outputs: Map<string, string>
@@ -889,6 +893,7 @@ function documenterRecords(ctx: RunCtx, selfId: string): string {
       lines.push(`- Result: done · agent ${r.agent ?? "?"} · ${fmtMs(r.ms ?? 0)}${(r.iteration ?? 1) > 1 ? ` · ${r.iteration} iterations` : ""}`)
       if (r.warnings?.length) lines.push(`- Warnings: ${r.warnings.join("; ")}`)
       if (def?.prompt) lines.push(`- Instruction: ${clip(def.prompt.trim(), 600)}`)
+      else if (def?.tool) lines.push(`- Tool: ${clip(JSON.stringify(def.tool), 600)}`)
       const output = ctx.outputs.get(r.nodeId)
       if (output) lines.push("- Output:", "```", clip(output.trim(), 3000), "```")
       return lines.join("\n")
@@ -897,6 +902,9 @@ function documenterRecords(ctx: RunCtx, selfId: string): string {
 }
 
 const titleCase = (key: string) => key.replace(/[_-]+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())
+
+const nodeAgentLabel = (def: AgentDefinition): string =>
+  def.type === "tool" ? toolAgentLabel(def.tool) : def.agent_mapping?.opencode ?? "sub-workflow"
 
 /** The whole-run report: a deterministic step table + the documenter's narrative (D19). */
 function renderRunReport(ctx: RunCtx, docId: string, docOutput: string, schema: Record<string, string>): string {
@@ -1007,9 +1015,46 @@ async function callAgent(client: OpencodeClient, sessionId: string, agent: strin
   return extractText(result.data?.parts ?? result.parts ?? [])
 }
 
+// A tool node runs no model: resolve its `{ref}`s from the same sources an agent's prompt would
+// receive, run the deterministic executor, and leave the same artifacts an agent node leaves.
+async function runToolNode(ctx: RunCtx, dagNode: DagNode, iter: number): Promise<NodeResult> {
+  const { id: nodeId, def } = dagNode
+  const agent = toolAgentLabel(def.tool)
+  const t0 = Date.now()
+  const fail = (error: string, resolved: string[] = [], notices: string[] = []): NodeResult => {
+    const ms = Date.now() - t0
+    fs.writeFileSync(path.join(ctx.runDir, logFileName(nodeId)),
+      [`# ${nodeId}${iter > 1 ? ` (iter ${iter})` : ""}`, `- **Agent**: ${agent}`, `- **Elapsed**: ${ms} ms`, `- **Result**: FAILED — ${error}`,
+       ...(notices.length ? ["", "## Template notices", ...notices.map((n) => `- ${n}`)] : []),
+       "", "## Resolved", "```", ...resolved, "```"].join("\n"))
+    return { nodeId, agent, output: "", ms, schemaWarnings: [], notices: [], iteration: iter, error }
+  }
+  if (!def.tool) return fail("tool node has no tool block")
+  try {
+    const result = await runTool({
+      nodeId, spec: def.tool, projectDir: ctx.directory, runDir: ctx.runDir,
+      scope: { sources: dagNode.sources, outputs: ctx.outputs, input: ctx.inbound },
+    })
+    const ms = Date.now() - t0
+    for (const n of result.notices) log("warn", `tool ${ctx.scope}${nodeId}: ${n}`)
+    const schemaWarnings = validateOutput(nodeId, result.output, def.output?.schema)
+    fs.writeFileSync(path.join(ctx.runDir, outputFileName(nodeId)),
+      JSON.stringify({ nodeId, agent, result: result.output, elapsed_ms: ms, iteration: iter, schemaWarnings }, null, 2))
+    fs.writeFileSync(path.join(ctx.runDir, logFileName(nodeId)),
+      [`# ${nodeId}${iter > 1 ? ` (iter ${iter})` : ""}`, `- **Agent**: ${agent}`, `- **Elapsed**: ${ms} ms`, `- **Iteration**: ${iter}`,
+       ...(schemaWarnings.length > 0 ? [`- **Schema warnings**: ${schemaWarnings.join("; ")}`] : []),
+       ...(result.notices.length ? ["", "## Template notices", ...result.notices.map((n) => `- ${n}`)] : []),
+       "", "## Resolved", "```", ...result.resolved, "```", "", "## Output", result.output].join("\n"))
+    return { nodeId, agent, output: result.output, ms, schemaWarnings, notices: [], iteration: iter }
+  } catch (err) {
+    return err instanceof ToolError ? fail(err.message, err.resolved, err.notices) : fail(errorMessage(err))
+  }
+}
+
 async function runSingleNode(ctx: RunCtx, dagNode: DagNode, iter: number, previousOutput?: string): Promise<NodeResult> {
   const { id: nodeId, def } = dagNode
   if (def.type === "sub-workflow") return runSubWorkflow(ctx, dagNode, iter)
+  if (def.type === "tool") return runToolNode(ctx, dagNode, iter)
 
   const mapped = def.agent_mapping?.opencode ?? ""
   let agent: string
@@ -1189,7 +1234,7 @@ async function runGraph(ctx: RunCtx, dag: Dag, st: GraphState, hooks: GraphHooks
     }
 
     for (const id of toRun) {
-      const a = dag.nodes.get(id)!.def.agent_mapping?.opencode ?? "sub-workflow"
+      const a = nodeAgentLabel(dag.nodes.get(id)!.def)
       const iter = (st.iterations[id] ?? 0) + 1
       st.nodeStates[id] = "running"
       emit({ type: "node.state", runId, nodeId: id, state: "running", agent: a, iteration: iter, at: ts() })
@@ -1377,7 +1422,7 @@ async function runWorkflow(client: OpencodeClient, directory: string, wf: Workfl
 
   const sess = await client.session.create({ body: { title: `Agentry: ${wf.introduction} (${runId})` } })
   const ctx: RunCtx = {
-    client, sessionId: sess.data.id, runId, runDir, workflow: wf,
+    client, sessionId: sess.data.id, runId, directory, runDir, workflow: wf,
     outputs: new Map(), strict: strictJsonNodes(wf), history: [], scope: "",
     inbound: input || undefined, inboundLabel: "Workflow input", inboundTo: entrySet(wf),
   }

@@ -14,7 +14,7 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "node --experimental-strip-types --no-warnings --test test/*.test.mjs"
+    "test": "node --experimental-strip-types --no-warnings --import ./test/_resolve-ts.mjs --test test/*.test.mjs"
   },
   "dependencies": {
     "yaml": "^2.6.0"

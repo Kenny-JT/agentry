@@ -18,3 +18,4 @@ First public version. Everything below is what the project contains so far.
 - 15 color themes, shared by the editor and the live panel.
 - The node inspector can pop out into a floating panel over the canvas, be hidden, or be resized when docked, and both side panels have toolbar toggles with shortcuts (Ctrl+B, Ctrl+Alt+B).
 - Release tooling: CI on every pull request, one version for every package, and a tag-driven release workflow.
+- Tool nodes (`type: tool`): HTTP request, read file, write file and run script steps that run without a model, with `{upstream.field}` templating, project-confined paths and the same artifacts, events and control flow as agent nodes.

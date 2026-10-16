@@ -1,3 +1,5 @@
+import { ToolGlyph } from '@agentry/canvas';
+import { toolLabel } from '@agentry/core';
 import type { HistorySort, SidebarView } from '../App';
 import { AGENT_DROP_MIME, agentGroupLabel, agentGroups, agentTemplates } from '../agentTemplates';
 import type { AgentTemplate } from '../agentTemplates';
@@ -73,11 +75,13 @@ function AgentCard({ agent, onAddAgent }: { agent: AgentTemplate; onAddAgent: (t
         }
       }}
     >
-      <span className="agentry-agentcard__glyph">{agent.name.charAt(0)}</span>
+      <span className={`agentry-agentcard__glyph${agent.tool ? ' agentry-agentcard__glyph--tool' : ''}`}>
+        {agent.tool ? <ToolGlyph kind={agent.tool.kind} size={14} /> : agent.name.charAt(0)}
+      </span>
       <div className="agentry-agentcard__body">
         <div className="agentry-agentcard__row">
           <span className="agentry-agentcard__name">{agent.name}</span>
-          <code className="agentry-agentcard__type">{agent.opencodeAgent}</code>
+          <code className="agentry-agentcard__type">{agent.tool ? toolLabel(agent.tool) : agent.opencodeAgent}</code>
         </div>
         <p className="agentry-agentcard__desc">{agent.description}</p>
       </div>

@@ -346,6 +346,153 @@ test("POST /api/run starts a run with no model in the loop: token required, one 
   await hooks.dispose()
 })
 
+// ── tool nodes: deterministic steps, no model ──
+
+const tool = (spec, extra = {}) => ({ type: "tool", tool: spec, output: { schema: {} }, ...extra })
+const outputOf = (runDir, id) => JSON.parse(JSON.parse(fs.readFileSync(path.join(runDir, `${id}.output.json`), "utf8")).result)
+/** A stdin-reading node script that prints JSON — the shape a `script` tool consumes and produces. */
+const ECHO = "let s='';process.stdin.on('data',(c)=>{s+=c}).on('end',()=>{console.log(JSON.stringify({got:JSON.parse(s),argv:process.argv.slice(1),file:require('path').basename(process.env.AGENTRY_INPUT_FILE)}))})"
+const NODE = process.execPath
+
+function localServer(handler) {
+  return new Promise((resolve) => {
+    const srv = http.createServer(handler)
+    srv.listen(0, "127.0.0.1", () => resolve({ port: srv.address().port, close: () => new Promise((done) => srv.close(done)) }))
+  })
+}
+
+test("http tool: templated url/headers/body, JSON response parsed, feeds an agent through {fetch.body.x}; non-2xx fails unless allowed", async () => {
+  const seen = []
+  const srv = await localServer((req, res) => {
+    let body = ""
+    req.on("data", (c) => { body += c })
+    req.on("end", () => {
+      seen.push({ url: req.url, method: req.method, accept: req.headers.accept, body })
+      if (req.url.startsWith("/missing")) { res.writeHead(404, { "Content-Type": "text/plain" }); res.end("nope"); return }
+      res.writeHead(200, { "Content-Type": "application/json" })
+      res.end(JSON.stringify({ x: "forty-two", echo: body ? JSON.parse(body) : null }))
+    })
+  })
+  try {
+    const base = `http://127.0.0.1:${srv.port}`
+    const { out, runDir, promptOf } = await run(workflow({
+      find: agent("NODE=find", { output: { schema: { q: "string", page: "string" } } }),
+      fetch: tool({ kind: "http", method: "POST", url: `${base}/search?q={find.q}&literal={nope}`, headers: { Accept: "text/x-{find.page}" }, body: { term: "{find.q}", n: 2 } }, { input: { from: "find" } }),
+      whole: tool({ kind: "http", url: "{find.page}" }, { input: { from: "find" } }),
+      use: agent("NODE=use", { input: { from: "fetch" } }),
+    }), (text) => (tag(text) === "find" ? JSON.stringify({ q: "a b&c", page: `${base}/page?x=1` }) : "ok"))
+    assert.match(out, /WORKFLOW RUN COMPLETE/)
+    assert.deepEqual(seen.find((s) => s.method === "POST"), { url: "/search?q=a%20b%26c&literal={nope}", method: "POST", accept: "text/x-http://127.0.0.1:" + srv.port + "/page?x=1", body: '{"term":"a b&c","n":2}' })
+    assert.equal(seen.find((s) => s.method === "GET")?.url, "/page?x=1") // a whole-url reference is substituted raw
+    const fetched = outputOf(runDir, "fetch")
+    assert.deepEqual([fetched.status, fetched.ok, fetched.body.x], [200, true, "forty-two"])
+    assert.match(promptOf("use"), /"x":"forty-two"/)
+    assert.match(out, /fetch \(tool:http\)/)
+    assert.match(fs.readFileSync(path.join(runDir, "fetch.log.md"), "utf8"), /## Resolved\n```\nPOST http:\/\/127\.0\.0\.1:\d+\/search\?q=a%20b%26c/)
+
+    const failed = await run(workflow({ miss: tool({ kind: "http", url: `${base}/missing` }) }), () => "ok")
+    assert.match(failed.out, /FAILED at "miss" \(tool:http\): GET .*answered 404/)
+    const allowed = await run(workflow({ miss: tool({ kind: "http", url: `${base}/missing`, allow_failure: true }) }), () => "ok")
+    assert.match(allowed.out, /WORKFLOW RUN COMPLETE/)
+    assert.deepEqual(outputOf(allowed.runDir, "miss"), { status: 404, ok: false, content_type: "text/plain", body: "nope" })
+  } finally {
+    await srv.close()
+  }
+})
+
+test("read_file -> write_file round-trip inside the project; paths may not escape it", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "agentry-test-"))
+  tempDirs.push(dir)
+  fs.mkdirSync(path.join(dir, "data"))
+  fs.writeFileSync(path.join(dir, "data", "in.json"), '{"name":"Agentry","n":3}')
+  const wf = workflow({
+    read: tool({ kind: "read_file", path: "data/{input}.json" }),
+    write: tool({ kind: "write_file", path: "out/{read.json.name}.txt", content: "n={read.json.n}\n", mode: "append" }, { input: { from: "read" } }),
+    again: tool({ kind: "write_file", path: "out/Agentry.txt", mode: "append" }, { input: { from: "write" } }),
+    copy: tool({ kind: "write_file", path: "out/copy.json" }, { input: { from: "read" }, trigger: { when: { from: "read", contains: "agentry" } } }),
+  })
+  fs.writeFileSync(path.join(dir, "wf.yaml"), JSON.stringify(wf))
+  const hooks = await plugin.server({ client: scriptedClient(() => "ok"), directory: dir })
+  const out = await hooks.tool.agentry_run.execute({ workflow: "wf.yaml", input: "in" }, {})
+  assert.match(out, /WORKFLOW RUN COMPLETE/)
+  const runDir = path.join(dir, ".agentry", "runs", /Run ID\s*:\s*(\S+)/.exec(out)[1])
+  assert.deepEqual(outputOf(runDir, "read"), { path: "data/in.json", bytes: 24, content: '{"name":"Agentry","n":3}', json: { name: "Agentry", n: 3 } })
+  assert.deepEqual(outputOf(runDir, "write"), { path: "out/Agentry.txt", bytes: 4, mode: "append" })
+  // `content` omitted = the first upstream's whole output text (write's output JSON)
+  assert.equal(fs.readFileSync(path.join(dir, "out", "Agentry.txt"), "utf8"), 'n=3\n{"path":"out/Agentry.txt","bytes":4,"mode":"append"}')
+  assert.equal(fs.readFileSync(path.join(dir, "out", "copy.json"), "utf8"), '{"path":"data/in.json","bytes":24,"content":"{\\"name\\":\\"Agentry\\",\\"n\\":3}","json":{"name":"Agentry","n":3}}')
+  await hooks.dispose()
+
+  for (const bad of ["../escape.txt", path.join(os.tmpdir(), "abs.txt"), "data/../../escape.txt"]) {
+    const { out: refused } = await run(workflow({ w: tool({ kind: "write_file", path: bad, content: "x" }) }), () => "ok")
+    assert.match(refused, /FAILED at "w" \(tool:write_file\): path ".*" escapes the project directory/, bad)
+  }
+  const { out: missing } = await run(workflow({ r: tool({ kind: "read_file", path: "nope.txt" }) }), () => "ok")
+  assert.match(missing, /FAILED at "r" \(tool:read_file\): path "nope.txt" does not exist/)
+})
+
+test("script tool: argv form gets stdin JSON + AGENTRY_INPUT_FILE, templated args, `result` parsed from JSON stdout", async () => {
+  const { out, runDir } = await run(workflow({
+    find: agent("NODE=find", { output: { schema: { k: "string" } } }),
+    echo: tool({ kind: "script", command: [NODE, "-e", ECHO, "{find.k}", "lit {nope}"], timeout_s: 30 }, { input: { from: "find" } }),
+    after: agent("NODE=after", { input: { from: "echo" } }),
+  }), (text) => (tag(text) === "find" ? '{"k":"v1"}' : "ok"), { input: "run input" })
+  assert.match(out, /WORKFLOW RUN COMPLETE/)
+  const result = outputOf(runDir, "echo")
+  assert.equal(result.exit_code, 0)
+  assert.deepEqual(result.result, { got: { input: "run input", upstream: { find: { k: "v1" } } }, argv: ["v1", "lit {nope}"], file: "echo.input.json" })
+  assert.equal(fs.readFileSync(path.join(runDir, "echo.input.json"), "utf8"), '{"input":"run input","upstream":{"find":{"k":"v1"}}}')
+})
+
+test("script tool: a string command runs through the shell and is never templated", async () => {
+  const { out, runDir } = await run(workflow({
+    find: agent("NODE=find"),
+    sh: tool({ kind: "script", command: "echo hello {find}" }, { input: { from: "find" } }),
+  }), () => "SHOULD NOT APPEAR")
+  assert.match(out, /WORKFLOW RUN COMPLETE/)
+  const result = outputOf(runDir, "sh")
+  assert.equal(result.exit_code, 0)
+  assert.match(result.stdout, /^hello \{find\}\s*$/)
+  assert.equal(result.result, undefined)
+})
+
+test("script tool: non-zero exit fails the node unless allow_failure; a timeout kills the process tree", async () => {
+  const failing = await run(workflow({ bad: tool({ kind: "script", command: [NODE, "-e", "console.log('partial'); process.exit(3)"] }) }), () => "ok")
+  assert.match(failing.out, /FAILED at "bad" \(tool:script\): script exited with 3/)
+  const runsDir = path.join(failing.dir, ".agentry", "runs")
+  const failedRunDir = path.join(runsDir, fs.readdirSync(runsDir)[0]) // a failed run prints no "Run ID" line
+  assert.ok(!fs.existsSync(path.join(failedRunDir, "bad.output.json")))
+  assert.match(fs.readFileSync(path.join(failedRunDir, "bad.log.md"), "utf8"), /FAILED — script exited with 3/)
+
+  const allowed = await run(workflow({ bad: tool({ kind: "script", command: [NODE, "-e", "console.log('partial'); process.exit(3)"], allow_failure: true }) }), () => "ok")
+  assert.match(allowed.out, /WORKFLOW RUN COMPLETE/)
+  assert.equal(outputOf(allowed.runDir, "bad").exit_code, 3)
+  assert.match(outputOf(allowed.runDir, "bad").stdout, /partial/)
+
+  const t0 = Date.now()
+  const slow = await run(workflow({ slow: tool({ kind: "script", command: [NODE, "-e", "setTimeout(() => {}, 30000)"], timeout_s: 1 }) }), () => "ok")
+  assert.match(slow.out, /FAILED at "slow" \(tool:script\): script timed out after 1 s/)
+  assert.ok(Date.now() - t0 < 10_000, "the sleeping child was killed, not awaited")
+})
+
+test("a branch routes on a field a tool produced upstream; tool nodes join waves, gates and select like any node", async () => {
+  const srv = await localServer((req, res) => { res.writeHead(200, { "Content-Type": "application/json" }); res.end('{"kind":"png","size":9}') })
+  try {
+    const { cp, promptOf } = await run(workflow({
+      probe: tool({ kind: "http", url: `http://127.0.0.1:${srv.port}/` }),
+      route: agent("NODE=route", { type: "branch", branch_on: "kind", input: { from: "probe", select: { probe: ["body"] } }, output: { schema: { kind: "string" } }, routes: [{ to: "png", when: { equals: "png" } }, { to: "other" }] }),
+      png: tool({ kind: "write_file", path: "out/{probe.body.kind}.txt", content: "size={probe.body.size}" }, { input: { from: "probe" } }),
+      other: agent("NODE=other"),
+      note: tool({ kind: "write_file", path: "out/gated.txt", content: "x" }, { trigger: { when: { from: "probe", contains: '"kind":"jpg"' } } }),
+    }), (text) => (tag(text) === "route" ? /"kind":"png"/.test(text) ? '{"kind":"png"}' : '{"kind":"?"}' : "ok"))
+    assert.deepEqual([...cp.completed].sort(), ["png", "probe", "route"])
+    assert.deepEqual([...cp.skipped].sort(), ["note", "other"])
+    assert.match(promptOf("route"), /\{"body":\{"kind":"png","size":9\}\}/) // select slices the tool's JSON; the tool is never asked to "answer in JSON"
+  } finally {
+    await srv.close()
+  }
+})
+
 test("dispose closes the panel server and withdraws panel.json", async () => {
   const { dir, hooks } = await run(workflow({ only: agent("NODE=only") }), () => "ok")
   const port = panelPort(dir)

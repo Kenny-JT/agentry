@@ -32,13 +32,15 @@ const MINI_TYPE_CLASS: Record<AgentType, string> = {
   reporter: 'is-type-reporter',
   documenter: 'is-type-documenter',
   'sub-workflow': 'is-type-subworkflow',
+  tool: 'is-type-tool',
   'workflow-input': 'is-type-input',
   'workflow-output': 'is-type-output',
 };
 
 /* Node silhouette in the minimap, matching each type's on-canvas shape so the
    overview reads at a glance: straight = rounded rect, branch = right-opening
-   trapezoid, sub-workflow = flat hexagon, reporter = right semicircle. */
+   trapezoid, sub-workflow = flat hexagon, reporter = right semicircle, tool =
+   square-cornered rect. */
 function miniNodeShape(type: AgentType | undefined, bx: number, by: number, bw: number, bh: number, className: string) {
   if (type === 'branch') {
     const s = Math.min(14, bh * 0.16);
@@ -64,6 +66,9 @@ function miniNodeShape(type: AgentType | undefined, bx: number, by: number, bw: 
   if (type === 'workflow-output') {
     const p = Math.min(20, bw * 0.22);
     return <path className={className} d={`M ${bx + p} ${by} L ${bx + bw} ${by} L ${bx + bw} ${by + bh} L ${bx + p} ${by + bh} L ${bx} ${by + bh / 2} Z`} />;
+  }
+  if (type === 'tool') {
+    return <rect className={className} x={bx} y={by} width={bw} height={bh} rx={4} ry={4} />;
   }
   return <rect className={className} x={bx} y={by} width={bw} height={bh} rx={16} ry={16} />;
 }

@@ -5,9 +5,10 @@
  * plugin can run the exact same rules. (06-implementation-final-plan §5.1)
  */
 
-import { joinMode } from './runtime';
+import { branchParents, inputSources, joinMode } from './runtime';
+import { checkToolSpec, templateRefs, toolTemplateFields } from './tool';
 import { checkTriggers } from './triggers';
-import type { Workflow } from './workflow';
+import type { AgentDefinition, Workflow } from './workflow';
 
 export type IssueSeverity = 'error' | 'warning';
 
@@ -22,12 +23,39 @@ export interface ValidationIssue {
 const asList = (from: string | string[] | undefined): string[] =>
   from === undefined ? [] : Array.isArray(from) ? from : [from];
 
+/** A tool node's `tool` block: shape errors, plus a warning per `{ref}` that is not an upstream source or `input`. */
+function toolIssues(id: string, def: AgentDefinition, sources: readonly string[]): ValidationIssue[] {
+  const issues: ValidationIssue[] = [];
+  if (!def.tool) {
+    issues.push({ severity: 'error', code: 'tool-missing', nodeId: id, field: 'tool', message: `"${id}" is a tool node but has no tool block.` });
+    return issues;
+  }
+  for (const message of checkToolSpec(id, def.tool)) {
+    issues.push({ severity: 'error', code: 'tool-invalid', nodeId: id, field: 'tool', message });
+  }
+  if (issues.length) return issues;
+  for (const { field, text } of toolTemplateFields(def.tool)) {
+    for (const ref of templateRefs(text)) {
+      if (ref.root === 'input' || sources.includes(ref.root)) continue;
+      issues.push({
+        severity: 'warning',
+        code: 'template-unknown-source',
+        nodeId: id,
+        field,
+        message: `"${id}" references ${ref.raw} in tool.${field}, but "${ref.root}" is not an upstream of this node (nor "input") — it is left as written.`,
+      });
+    }
+  }
+  return issues;
+}
+
 export function validateWorkflow(workflow: Workflow): ValidationIssue[] {
   const issues: ValidationIssue[] = [];
   const agents = workflow.agents ?? {};
   const ids = Object.keys(agents);
   const has = (id: string): boolean => Boolean(agents[id]);
   const fieldsOf = (id: string): string[] => Object.keys(agents[id]?.output?.schema ?? {});
+  const parents = branchParents({ agents });
 
   const consumed = new Set<string>();
   const fed = new Set<string>();
@@ -35,6 +63,8 @@ export function validateWorkflow(workflow: Workflow): ValidationIssue[] {
   for (const id of ids) {
     const def = agents[id];
     if (!def) continue;
+
+    if (def.type === 'tool') issues.push(...toolIssues(id, def, inputSources(def, parents.get(id) ?? [])));
 
     for (const from of asList(def.input?.from)) {
       if (has(from)) {

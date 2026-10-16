@@ -52,6 +52,7 @@ The Gmail and Google Calendar helper tools used in these clips are not part of t
 
 - **Editor.** A desktop app (Tauri) that also runs in the browser. Edges route around nodes at right angles and follow while you drag. Every node has an inspector; problems such as a broken reference or a required field that nothing produces show up while you edit. Workflows import from and export to YAML, with local history and 15 color themes.
 - **Control flow.** Pick one of several next steps from a field of a node's output. Run a step only when an upstream's output matches a condition. Repeat a step until its output says it is done, up to a limit. Continue on the first finished input, or wait for all of them. Pass only some fields along an edge. Embed a whole workflow as a single node.
+- **Tool steps.** Steps that run without a model: an HTTP request, reading or writing a file inside the project, or a script. Their output is JSON, so later steps and branches can use its fields.
 - **Runtime.** The opencode plugin runs independent steps in parallel, writes each step's output and log under `.agentry/runs/`, resumes from the last checkpoint, opens a live panel in its own window, and can finish a run with a Markdown report of what every step did.
 - **Watch runs in the editor.** Point the editor at your project and a run lights up on the same canvas you drew it on.
 - **Triggers.** `agentry-watch` starts a workflow when files land in a folder, at a set time, when a web page or a Gmail inbox changes, or when you push to a git branch.
@@ -106,10 +107,39 @@ workflow: [find_bugs, check_security, summarize]
 | `trigger.when` | Run the step only if an upstream's output contains or equals a value; otherwise it is skipped. |
 | `trigger.loop` | Run the step again until `exit_when` matches, at most `max` times. |
 | `type: branch`, `branch_on`, `routes` | Read one field of the step's output and continue on the first route whose condition matches. |
+| `type: tool`, `tool` | A step that runs without a model; see [Tool steps](#tool-steps). |
 | `on` | Start the workflow by itself: `file`, `schedule`, `web`, `mail` or `git`. |
 | `workflow` | Every step id, in display order. A step that is not listed does not run. |
 
 The complete reference is the commented types in [`packages/core/src/workflow.ts`](packages/core/src/workflow.ts).
+
+### Tool steps
+
+A step with `type: tool` does its job without a model. Added to the example above, this one saves the review:
+
+```yaml
+  save_review:
+    type: tool
+    input: { from: summarize }
+    tool:
+      kind: write_file
+      path: reviews/latest.md
+      content: "{summarize.comment}"
+    output: { schema: { path: string, bytes: number, mode: string } }
+```
+
+| `kind` | Fields | Output |
+|---|---|---|
+| `http` | `url`, `method`, `headers`, `body`, `timeout_s`, `allow_failure` | `status`, `ok`, `content_type`, `body` |
+| `read_file` | `path` | `path`, `bytes`, `content`, plus `json` when the file is JSON |
+| `write_file` | `path`, `content`, `mode` (`overwrite` or `append`) | `path`, `bytes`, `mode` |
+| `script` | `command`, `cwd`, `timeout_s`, `allow_failure` | `exit_code`, `stdout`, `stderr`, plus `result` when stdout is JSON |
+
+- `{step_id}` inserts an upstream step's whole output, `{step_id.field}` one field of it, and `{input}` the run's input. Inside a `url`, inserted values are URL-encoded unless the whole URL is one reference.
+- File paths and a script's `cwd` must stay inside the project. A path that points outside fails the step.
+- A `command` written as a list runs without a shell, and each item may contain references. A `command` written as a string runs in the shell and is never filled in from upstream output; the script reads the run input and its upstream outputs as JSON on stdin instead. On Windows, `npm`, `pnpm` and `npx` need the string form.
+- Scripts run with your own user's permissions, like any script you start yourself.
+- An HTTP status outside 2xx or a non-zero exit code fails the step unless `allow_failure: true`. A timeout always fails it; the defaults are 30 s for HTTP and 120 s for scripts. `read_file` reads at most 2 MB; non-JSON HTTP bodies are cut at 256 KB and script output at 64 KB.
 
 ## Start workflows automatically
 
