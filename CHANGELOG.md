@@ -4,6 +4,8 @@ Notable changes to Agentry. The format follows [Keep a Changelog](https://keepac
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-10-16
+
 First public version. Everything below is what the project contains so far.
 
 ### Added
