@@ -202,7 +202,7 @@ export interface InspectorProps {
   outgoingTo: string[];
   embeddable: EmbeddableWorkflow[];
   existingIds: string[];
-  /** docs/12 D5: derived strict-JSON marker (branch, or upstream of a `select` edge). */
+  /** Derived strict-JSON marker (branch, or upstream of a `select` edge). */
   jsonOut?: boolean;
   onChangeDefinition: (nodeId: string, next: AgentDefinition) => void;
   onRenameNode: (oldId: string, nextId: string) => void;

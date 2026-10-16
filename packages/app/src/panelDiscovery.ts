@@ -1,7 +1,7 @@
 import { isTauri } from './platform';
 
 /**
- * Discovery of the plugin's live-panel SSE server (docs/12 D1, phase 1).
+ * Discovery of the plugin's live-panel SSE server.
  *
  * The plugin binds `listen(0)` (random port) and writes the coordinates to
  * `<projectRoot>/.agentry/panel.json`. A crashed plugin never deletes that
@@ -129,7 +129,7 @@ export type PanelProbe =
   | 'unreachable'; // nothing answered — dead port
 
 /**
- * Authoritative port check, identity first (docs/12 D1 hardening).
+ * Authoritative port check, identity first.
  *
  * A SIGKILL leaves panel.json behind and the OS can hand the recorded port to a
  * FOREIGN process, so "something answered" is not enough — the old opaque

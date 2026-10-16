@@ -2,7 +2,7 @@ import type { AgentDefinition, AgentInput } from '@agentry/core';
 
 /**
  * Drop a definition's `input.select` entries for the given upstream sources
- * (docs/12 D4: a filter is scoped to its edge — no edge, no filter). Prunes an
+ * (a filter is scoped to its edge — no edge, no filter). Prunes an
  * emptied `select`/`input` object the same way App's toggle handler does.
  * Returns the SAME definition reference when nothing applies, and keeps
  * surviving entries verbatim (entry order + field-array identity) so exports

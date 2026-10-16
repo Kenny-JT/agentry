@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "agentry-watch: starts a project's workflows by themselves when their `on:` triggers fire (docs/15).",
+  "description": "agentry-watch: starts a project's workflows by themselves when their `on:` triggers fire.",
   "bin": {
     "agentry-watch": "./dist/agentry-watch.mjs"
   },

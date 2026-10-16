@@ -130,7 +130,7 @@ export interface AgentInput {
    */
   from?: string | string[];
   /**
-   * Per-edge field filter (docs/12 D4, PROVISIONAL like the rest of this file):
+   * Per-edge field filter (PROVISIONAL like the rest of this file):
    * upstream node id -> the field names of that upstream's `output.schema` this
    * node KEEPS. Edge-level only — it narrows what THIS node receives on that
    * one edge and never changes the upstream's own output or its other
@@ -185,7 +185,7 @@ export interface TechStack {
    * order — so the node is self-contained and survives being copied elsewhere
    * (no external ref to resolve). The runner executes it with the same
    * scheduler as a top-level workflow — inner branch / trigger.when / loop /
-   * join all apply (docs/14 D8) — and folds its `output.from` nodes into this
+   * join all apply — and folds its `output.from` nodes into this
    * node's output.
    */
   workflow?: Workflow;
@@ -240,7 +240,7 @@ export interface Workflow {
   /** Workflow kind, e.g. "pipeline". */
   type: string;
   /**
-   * When the workflow starts by itself (docs/15): a new file, a time, a page or
+   * When the workflow starts by itself: a new file, a time, a page or
    * mailbox change, a git push. Read by `agentry-watch`, never by the runner —
    * the fired event reaches the entry nodes as the run's input. Only the
    * top-level workflow's `on` is watched; a sub-workflow's is ignored.

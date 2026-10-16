@@ -1,7 +1,7 @@
 /**
  * Execution semantics of the workflow.yaml contract — the ONE implementation,
  * shared by the plugin runner (esbuild bundles this into
- * `.opencode/plugins/agentry.js`, docs/12 D7) and the editor.
+ * `.opencode/plugins/agentry.js`) and the editor.
  *
  * Everything a user configures in the editor and the runner later honours —
  * condition matching, which branch port is taken, which upstream outputs a
@@ -89,7 +89,7 @@ export function inputSources(def: AgentDefinition, parents: readonly string[] = 
 export const joinMode = (def: AgentDefinition): 'all' | 'any' => (def.input?.join === 'any' ? 'any' : 'all');
 
 /**
- * Nodes that must answer in strict JSON at run time (docs/12 D5) — derived,
+ * Nodes that must answer in strict JSON at run time — derived,
  * never user-toggled: a branch with a `branch_on` field (its value picks the
  * port) and every upstream a consumer keeps `select`ed fields from over a LIVE
  * edge (the slice needs keys). A dangling `select` key forces nothing.
@@ -170,7 +170,7 @@ export interface SelectSlice {
 
 /**
  * Slice one upstream's output for one edge's `input.select` entry. The list
- * names the fields KEPT (docs/12 D4; empty-list semantics confirmed in D9):
+ * names the fields KEPT:
  *   absent → the whole output passes (filtering is opt-in);
  *   `[]`   → `"{}"` — nothing passes, whether or not the upstream parses;
  *   `[a]`  → JSON with just those keys.

@@ -113,7 +113,7 @@ export function App() {
 
   const run = useRunEvents({ enabled: observing, projectRoot, portOverride });
 
-  // First run event flips the canvas into run mode (docs/12 D1 phase 1).
+  // First run event flips the canvas into run mode.
   useEffect(() => {
     if (observing && (run.runId !== null || run.nodeStates.size > 0)) setMode('run');
   }, [observing, run.runId, run.nodeStates]);
@@ -200,7 +200,7 @@ export function App() {
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [onToggleInspector, onToggleSidebar]);
 
-  // Edge-lens field toggle (docs/12 D4): flip one upstream field on the TARGET
+  // Edge-lens field toggle: flip one upstream field on the TARGET
   // node's `input.select`. The lens stores nothing itself — `select` lists the
   // KEPT fields in schema order, and an all-fields-on upstream serialises to no
   // entry at all, so untouched workflows never gain a `select` key.
@@ -236,7 +236,7 @@ export function App() {
   );
 
   // A `select` filter is scoped to its edge: deleting edge A→B must also drop
-  // B's `input.select[A]` from the in-memory definition (docs/12 D4). The
+  // B's `input.select[A]` from the in-memory definition. The
   // export already filters `select` by live edges, so without this the two
   // models disagree — re-adding the same edge in the same session silently
   // resurrects the old filter, while after save+reload it would not. Prunes an

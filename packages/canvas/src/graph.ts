@@ -2,7 +2,7 @@
  * Bridge between a {@link Workflow} (workflow.yaml shape) and the React Flow
  * graph the canvas renders. The editor exports its graph back to a Workflow;
  * the run panel turns a parsed Workflow into a graph. Shared so both stay in
- * lockstep. (06-implementation-final-plan §5.1)
+ * lockstep.
  *
  * BRANCH ROUTING (2026-07-12). A `branch` node does NOT feed its children
  * through their `input.from`; instead it owns a `routes[]` list (one entry per
@@ -411,7 +411,7 @@ function mergeInput(
 }
 
 /**
- * Whether a node is forced into strict-JSON output at run time (docs/12 D5).
+ * Whether a node is forced into strict-JSON output at run time.
  * Derived, never user-toggled: a `branch` node, or the upstream of at least one
  * live edge carrying an `input.select` filter. Prose agents stay unbadged
  * unless they meet this rule.

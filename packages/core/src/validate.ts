@@ -2,7 +2,7 @@
  * Static "typecheck" for a workflow: does every consumer get the fields it
  * needs from its producers? Pure — takes a serialized {@link Workflow} and
  * returns a flat issue list, so the editor (live + on export) and, later, the
- * plugin can run the exact same rules. (06-implementation-final-plan §5.1)
+ * plugin can run the exact same rules.
  */
 
 import { branchParents, inputSources, joinMode } from './runtime';

@@ -116,7 +116,7 @@ export interface WorkflowCanvasProps {
   onConnect?: OnConnect;
   onDropToPane?: (position: XYPosition, dataTransfer: DataTransfer) => void;
   /**
-   * Owner-side destination for the edge lens's field switches (docs/12 D4).
+   * Owner-side destination for the edge lens's field switches.
    * When provided, toggling a schema field on an agent→agent edge is delegated
    * here — the owner flips the target node's `input.select` and the lens
    * re-derives its ON/OFF state from that — so the switches live in the

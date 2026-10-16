@@ -1,6 +1,6 @@
 /**
  * Workflow-level triggers — the top-level `on:` block: WHEN a workflow starts
- * by itself (docs/15). `agentry-watch` (packages/trigger) watches for these and
+ * by itself. `agentry-watch` (packages/trigger) watches for these and
  * dispatches the run; the editor shows / edits them on the IN port. The plugin
  * runner never reads `on:` — it receives the fired {@link TriggerEvent} as the
  * run's input, handed to the entry nodes.
