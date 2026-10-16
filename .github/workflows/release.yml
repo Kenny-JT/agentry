@@ -51,7 +51,7 @@ jobs:
         id: release
         with:
           draft: true
-          prerelease: ${{ startsWith(github.ref_name, 'v0.') || contains(github.ref_name, '-') }}
+          prerelease: ${{ contains(github.ref_name, '-') }}
           name: Agentry ${{ github.ref_name }}
           body_path: release/NOTES.md
           files: |
@@ -71,7 +71,7 @@ jobs:
           - os: macos-latest
             args: --target universal-apple-darwin
             targets: aarch64-apple-darwin,x86_64-apple-darwin
-          - os: ubuntu-22.04
+          - os: ubuntu-24.04
             args: ''
             targets: ''
     runs-on: ${{ matrix.os }}
