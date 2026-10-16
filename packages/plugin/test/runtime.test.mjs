@@ -350,10 +350,9 @@ test("POST /api/run starts a run with no model in the loop: token required, one 
 
 const tool = (spec, extra = {}) => ({ type: "tool", tool: spec, output: { schema: {} }, ...extra })
 const outputOf = (runDir, id) => JSON.parse(JSON.parse(fs.readFileSync(path.join(runDir, `${id}.output.json`), "utf8")).result)
-/** A stdin-reading python script that prints JSON — the shape a `script` tool consumes and produces. */
-const PY_ECHO = "import json,sys,os; d=json.load(sys.stdin); print(json.dumps({'got': d, 'argv': sys.argv[1:], 'file': os.path.basename(os.environ['AGENTRY_INPUT_FILE'])}))"
-const PY = process.platform === "win32" ? "py" : "python3"
-const pyArgs = (code) => (process.platform === "win32" ? ["-3", "-c", code] : ["-c", code])
+/** A stdin-reading node script that prints JSON — the shape a `script` tool consumes and produces. */
+const ECHO = "let s='';process.stdin.on('data',(c)=>{s+=c}).on('end',()=>{console.log(JSON.stringify({got:JSON.parse(s),argv:process.argv.slice(1),file:require('path').basename(process.env.AGENTRY_INPUT_FILE)}))})"
+const NODE = process.execPath
 
 function localServer(handler) {
   return new Promise((resolve) => {
@@ -435,14 +434,14 @@ test("read_file -> write_file round-trip inside the project; paths may not escap
 test("script tool: argv form gets stdin JSON + AGENTRY_INPUT_FILE, templated args, `result` parsed from JSON stdout", async () => {
   const { out, runDir } = await run(workflow({
     find: agent("NODE=find", { output: { schema: { k: "string" } } }),
-    py: tool({ kind: "script", command: [PY, ...pyArgs(PY_ECHO), "{find.k}", "lit {nope}"], timeout_s: 30 }, { input: { from: "find" } }),
-    after: agent("NODE=after", { input: { from: "py" } }),
+    echo: tool({ kind: "script", command: [NODE, "-e", ECHO, "{find.k}", "lit {nope}"], timeout_s: 30 }, { input: { from: "find" } }),
+    after: agent("NODE=after", { input: { from: "echo" } }),
   }), (text) => (tag(text) === "find" ? '{"k":"v1"}' : "ok"), { input: "run input" })
   assert.match(out, /WORKFLOW RUN COMPLETE/)
-  const result = outputOf(runDir, "py")
+  const result = outputOf(runDir, "echo")
   assert.equal(result.exit_code, 0)
-  assert.deepEqual(result.result, { got: { input: "run input", upstream: { find: { k: "v1" } } }, argv: ["v1", "lit {nope}"], file: "py.input.json" })
-  assert.equal(fs.readFileSync(path.join(runDir, "py.input.json"), "utf8"), '{"input":"run input","upstream":{"find":{"k":"v1"}}}')
+  assert.deepEqual(result.result, { got: { input: "run input", upstream: { find: { k: "v1" } } }, argv: ["v1", "lit {nope}"], file: "echo.input.json" })
+  assert.equal(fs.readFileSync(path.join(runDir, "echo.input.json"), "utf8"), '{"input":"run input","upstream":{"find":{"k":"v1"}}}')
 })
 
 test("script tool: a string command runs through the shell and is never templated", async () => {
@@ -458,20 +457,20 @@ test("script tool: a string command runs through the shell and is never template
 })
 
 test("script tool: non-zero exit fails the node unless allow_failure; a timeout kills the process tree", async () => {
-  const failing = await run(workflow({ bad: tool({ kind: "script", command: [PY, ...pyArgs("import sys; print('partial'); sys.exit(3)")] }) }), () => "ok")
+  const failing = await run(workflow({ bad: tool({ kind: "script", command: [NODE, "-e", "console.log('partial'); process.exit(3)"] }) }), () => "ok")
   assert.match(failing.out, /FAILED at "bad" \(tool:script\): script exited with 3/)
   const runsDir = path.join(failing.dir, ".agentry", "runs")
   const failedRunDir = path.join(runsDir, fs.readdirSync(runsDir)[0]) // a failed run prints no "Run ID" line
   assert.ok(!fs.existsSync(path.join(failedRunDir, "bad.output.json")))
   assert.match(fs.readFileSync(path.join(failedRunDir, "bad.log.md"), "utf8"), /FAILED — script exited with 3/)
 
-  const allowed = await run(workflow({ bad: tool({ kind: "script", command: [PY, ...pyArgs("import sys; print('partial'); sys.exit(3)")], allow_failure: true }) }), () => "ok")
+  const allowed = await run(workflow({ bad: tool({ kind: "script", command: [NODE, "-e", "console.log('partial'); process.exit(3)"], allow_failure: true }) }), () => "ok")
   assert.match(allowed.out, /WORKFLOW RUN COMPLETE/)
   assert.equal(outputOf(allowed.runDir, "bad").exit_code, 3)
   assert.match(outputOf(allowed.runDir, "bad").stdout, /partial/)
 
   const t0 = Date.now()
-  const slow = await run(workflow({ slow: tool({ kind: "script", command: [PY, ...pyArgs("import time; time.sleep(30)")], timeout_s: 1 }) }), () => "ok")
+  const slow = await run(workflow({ slow: tool({ kind: "script", command: [NODE, "-e", "setTimeout(() => {}, 30000)"], timeout_s: 1 }) }), () => "ok")
   assert.match(slow.out, /FAILED at "slow" \(tool:script\): script timed out after 1 s/)
   assert.ok(Date.now() - t0 < 10_000, "the sleeping child was killed, not awaited")
 })
