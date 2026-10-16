@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Build the single-file opencode plugin (docs/12 D7): bundle src/agentry.ts together
+// Build the single-file opencode plugin: bundle src/agentry.ts together
 // with @agentry/core + @agentry/design (and yaml) into .opencode/plugins/agentry.js, so
 // the runner executes the SAME contract code the editor typechecks against instead of a
 // hand-kept parallel copy. @opencode-ai/plugin stays external: opencode installs it into

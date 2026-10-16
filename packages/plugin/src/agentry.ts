@@ -31,7 +31,7 @@ import { THEMES } from "@agentry/design"
 import { PANEL_TOKENS_CSS } from "./panelTokens"
 import { runTool, ToolError } from "./tools"
 
-const PANEL_FILE = ".agentry/panel.json" // App-side discovery file (docs/12 D1 phase 1)
+const PANEL_FILE = ".agentry/panel.json" // App-side discovery file
 const REPORT_FILE = "log.md" // whole-run report the documenter writes beside the node artifacts (D19)
 
 // ── helpers ──
@@ -94,7 +94,7 @@ function buildDag(wf: Workflow): { nodes: Map<string, DagNode>; order: string[] 
   const nodes = new Map<string, DagNode>()
   for (const [id, def] of Object.entries(wf.agents)) {
     // branch→child edges live only in routes[], not the child's input.from — inputSources
-    // folds them in, or children race their branch and run in the first wave (doc 10 §2.4 trap)
+    // folds them in, or children race their branch and run in the first wave
     const bp = parents.get(id) ?? []
     const sources = inputSources(def, bp)
     const upstream = [...sources]
@@ -245,7 +245,7 @@ function setPanelTheme(id: string): boolean {
   return true
 }
 
-// D1 (docs/12): the panel binds listen(0) → random port, so the App discovers it via
+// The panel binds listen(0) → random port, so the App discovers it via
 // <project>/.agentry/panel.json { port, runId, pid, startedAt }. `runId` must ALWAYS be a
 // string — the App parser (packages/app/src/panelDiscovery.ts) rejects the whole file when
 // `typeof runId !== 'string'`, and the server starts before any run exists, so we publish ""
@@ -702,7 +702,7 @@ function bindPanelServer(directory: string): Promise<number> {
     })
     srv.on("error", (err: unknown) => {
       // listen() can fail (EMFILE, exhausted ephemeral ports, local policy). The panel is
-      // best-effort by design (docs/12 D1): degrade to running WITHOUT a panel instead of
+      // best-effort by design: degrade to running WITHOUT a panel instead of
       // rejecting — an unsettled promise would wedge runInProgress=true for every future run.
       // resolve(0) = "no panel"; post-listen errors only log (the promise already settled).
       log("warn", `panel server failed: ${errorMessage(err)} — continuing without panel`)
@@ -948,7 +948,7 @@ function runSubWorkflowBlackBox(nodeId: string, def: AgentDefinition, runDir: st
   return { nodeId, agent: "sub-workflow", output, ms: 0, schemaWarnings: [], notices: [], iteration: iter }
 }
 
-// Run a sub-workflow node by recursing its inlined `tech_stack.workflow` (doc 10 §6.2) through
+// Run a sub-workflow node by recursing its inlined `tech_stack.workflow` through
 // the SAME scheduler as the top level (D8), so inner branch routing, trigger.when, loops and
 // join all apply. Scoped like its own workflow: nested run dir, its own strict-JSON set and
 // documenter; inner nodes stay off the parent canvas (the sub node is one hexagon there), so
@@ -1323,7 +1323,7 @@ async function runGraph(ctx: RunCtx, dag: Dag, st: GraphState, hooks: GraphHooks
         return { status: "cancelled" }
       }
       hooks.persist()
-      // checkpoint (docs/12 D3): nodes completed this wave are in the save above,
+      // checkpoint: nodes completed this wave are in the save above,
       // durably resumable-past — announce them even though the run is about to fail
       for (const id of doneThisWave) emit({ type: "checkpoint", runId, nodeId: id, at: ts() })
       for (const f of failedThisWave) emit({ type: "node.state", runId, nodeId: f.nodeId, state: "failed", at: ts() })
@@ -1345,11 +1345,11 @@ async function runGraph(ctx: RunCtx, dag: Dag, st: GraphState, hooks: GraphHooks
     }
 
     hooks.persist()
-    // checkpoint (docs/12 D3): emitted only after the durable write above, one per node that
+    // checkpoint: emitted only after the durable write above, one per node that
     // reached "done" this wave — so "resumable position" is never announced before it exists
     for (const id of doneThisWave) emit({ type: "checkpoint", runId, nodeId: id, at: ts() })
 
-    // handoff (docs/12 D3): one per delivered input of each node about to run — the edge-flow data
+    // handoff: one per delivered input of each node about to run — the edge-flow data
     for (const id of [...pending].filter(isReady)) {
       for (const src of dag.nodes.get(id)!.sources) if (completed.has(src)) emit({ type: "handoff", runId, from: src, to: id, at: ts() })
     }
@@ -1416,7 +1416,7 @@ async function runWorkflow(client: OpencodeClient, directory: string, wf: Workfl
       : [...node.upstream]
   }
   lastRunId = runId
-  writePanelFile(directory, runId) // refresh discovery file with the real runId (docs/12 D1)
+  writePanelFile(directory, runId) // refresh discovery file with the real runId
   emitPanel({ type: "run.started", runId, workflow: wf.introduction, nodeIds: dag.order, deps, at: ts() })
   log("info", `run.started ${runId} | panel: ${panelUrl}`)
 

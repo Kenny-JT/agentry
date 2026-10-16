@@ -1,4 +1,4 @@
-// GENERATED from packages/design/src/tokens.css by scripts/gen-panel-tokens.mjs — DO NOT EDIT BY HAND (docs/12 D6).
+// GENERATED from packages/design/src/tokens.css by scripts/gen-panel-tokens.mjs — DO NOT EDIT BY HAND.
 // Regenerate: node scripts/gen-panel-tokens.mjs (the plugin build runs it first).
 export const PANEL_TOKENS_CSS = `:root {
   --agentry-color-bg-app: #0b0d10;

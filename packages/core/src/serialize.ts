@@ -1,5 +1,5 @@
 /**
- * `workflow.yaml` (de)serialization (06-implementation-final-plan §5.1).
+ * `workflow.yaml` (de)serialization.
  *
  * ⚠️ PROVISIONAL. Pairs with the `Workflow` types in `workflow.ts`, which are
  * not yet frozen. Lives in `core` so BOTH ends share one serializer: the App

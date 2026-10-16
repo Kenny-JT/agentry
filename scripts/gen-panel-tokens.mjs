@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// gen-panel-tokens.mjs — docs/12 D6: generate the plugin panel's design-token CSS from
+// gen-panel-tokens.mjs — generate the plugin panel's design-token CSS from
 // packages/design/src/tokens.css (the single source of truth) instead of hand-copying
 // values into the plugin, which is how they drifted.
 //
@@ -57,7 +57,7 @@ const css = selectors
 const literal = css.replace(/\\/g, "\\\\").replace(/`/g, "\\`").replace(/\$\{/g, "\\${")
 
 const next =
-  "// GENERATED from packages/design/src/tokens.css by scripts/gen-panel-tokens.mjs — DO NOT EDIT BY HAND (docs/12 D6).\n" +
+  "// GENERATED from packages/design/src/tokens.css by scripts/gen-panel-tokens.mjs — DO NOT EDIT BY HAND.\n" +
   "// Regenerate: node scripts/gen-panel-tokens.mjs (the plugin build runs it first).\n" +
   `export const PANEL_TOKENS_CSS = \`${literal}\`\n`
 

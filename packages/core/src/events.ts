@@ -1,17 +1,16 @@
 /**
- * Execution events (06-implementation-final-plan §5.3).
+ * Execution events.
  *
- * ❄️ FROZEN against the plugin's real emissions (docs/12 D3, ratified
- * 2026-09-13). The runner (plugin) emits these; the run-mode panel and the
+ * ❄️ FROZEN against the plugin's real emissions. The runner (plugin) emits these; the run-mode panel and the
  * editor consume them. Kept in `core` so both ends share one definition.
- * All fields added by the D3 alignment are optional (`?`) for backward
+ * All later additions are optional (`?`) for backward
  * compatibility with older event streams.
  */
 
 /**
  * Unified node state. Drives the canonical status colors in @agentry/design.
- * `skipped` = the node was bypassed by a branch route / trigger condition
- * (docs/12 D3): rendered muted, clearly distinct from `failed`.
+ * `skipped` = the node was bypassed by a branch route / trigger condition:
+ * rendered muted, clearly distinct from `failed`.
  */
 export type NodeState = 'pending' | 'running' | 'done' | 'failed' | 'skipped';
 
@@ -32,7 +31,7 @@ export interface RunStartedEvent extends BaseEvent {
   workflow: string;
   /** Node ids present in the graph. */
   nodeIds: string[];
-  /** Dependency map: nodeId -> upstream nodeIds (docs/12 D3). */
+  /** Dependency map: nodeId -> upstream nodeIds. */
   deps?: Record<string, string[]>;
 }
 
@@ -41,13 +40,13 @@ export interface NodeStateEvent extends BaseEvent {
   type: 'node.state';
   nodeId: string;
   state: NodeState;
-  /** opencode agent executing the node (docs/12 D3). */
+  /** opencode agent executing the node. */
   agent?: string;
-  /** Current `trigger.loop` iteration, 1-based (docs/12 D3). */
+  /** Current `trigger.loop` iteration, 1-based. */
   iteration?: number;
-  /** True while the node is re-firing under `trigger.loop` (docs/12 D3). */
+  /** True while the node is re-firing under `trigger.loop`. */
   looping?: boolean;
-  /** Wall-clock duration of the node run in milliseconds (docs/12 D3). */
+  /** Wall-clock duration of the node run in milliseconds. */
   ms?: number;
 }
 
@@ -80,7 +79,7 @@ export interface RunFinishedEvent extends BaseEvent {
   status: RunStatus;
 }
 
-/** A node's structured output failed schema validation — surface it (docs/12 D3). */
+/** A node's structured output failed schema validation — surface it. */
 export interface SchemaWarningEvent extends BaseEvent {
   type: 'schema.warning';
   nodeId: string;
