@@ -34,7 +34,7 @@ export type AgentType =
   | 'documenter'
   | 'sub-workflow'
   /**
-   * Deterministic step with NO model (PROVISIONAL, docs/09 "Tool nodes"): an
+   * Deterministic step with NO model (PROVISIONAL, README "Tool steps"): an
    * HTTP request, a file read/write or a script, described by {@link AgentDefinition.tool}.
    * The runner dispatches on this type; `prompt` / `agent_mapping` are absent.
    */

@@ -346,7 +346,7 @@ test("POST /api/run starts a run with no model in the loop: token required, one 
   await hooks.dispose()
 })
 
-// ── tool nodes (docs/09 "Tool nodes"): deterministic steps, no model ──
+// ── tool nodes: deterministic steps, no model ──
 
 const tool = (spec, extra = {}) => ({ type: "tool", tool: spec, output: { schema: {} }, ...extra })
 const outputOf = (runDir, id) => JSON.parse(JSON.parse(fs.readFileSync(path.join(runDir, `${id}.output.json`), "utf8")).result)

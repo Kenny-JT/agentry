@@ -1,5 +1,5 @@
 /**
- * Tool nodes (PROVISIONAL, docs/09 "Tool nodes"): deterministic workflow steps
+ * Tool nodes (PROVISIONAL, README "Tool steps"): deterministic workflow steps
  * that run WITHOUT a model — an HTTP request, a file read or write, a script.
  * The node's `tool` block is the whole contract; `prompt` / `agent_mapping` are
  * absent. This file is the pure half (types, the `{ref}` template language,

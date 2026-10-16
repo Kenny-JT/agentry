@@ -1,4 +1,4 @@
-// Tool node executors (docs/09 "Tool nodes"): the I/O half of a deterministic step — an HTTP
+// Tool node executors (README "Tool steps"): the I/O half of a deterministic step — an HTTP
 // request, a file read/write or a script — fed by the pure template language in @agentry/core.
 // Every path resolves against the project directory the plugin was loaded for and MUST stay
 // inside it; a script's command string never has upstream text interpolated into it.
