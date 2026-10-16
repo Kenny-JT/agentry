@@ -30,6 +30,8 @@ import { ExportDialog } from './components/ExportDialog';
 import { SettingsPanel } from './components/SettingsPanel';
 import { Inspector } from './components/Inspector';
 import type { IncomingSource, EmbeddableWorkflow } from './components/Inspector';
+import { InspectorFloat } from './components/InspectorFloat';
+import { PanelRightIcon } from './components/icons';
 import { Sidebar } from './components/Sidebar';
 import { StatusBar } from './components/StatusBar';
 import { Toolbar } from './components/Toolbar';
@@ -38,6 +40,13 @@ import type { AgentTemplate } from './agentTemplates';
 import { deleteWorkflow, listWorkflows, newWorkflowId, upsertWorkflow } from './workflowStore';
 import type { SavedWorkflow } from './workflowStore';
 import { heroGraph } from './sampleWorkflow';
+import {
+  readInspectorMode,
+  readInspectorWidth,
+  writeInspectorMode,
+  writeInspectorWidth,
+} from './inspectorLayout';
+import type { InspectorMode, InspectorPlacement } from './inspectorLayout';
 import { openYamlFile } from './platform';
 import { getStoredProjectRoot, pushPanelTheme, storeProjectRoot } from './panelDiscovery';
 import { pruneSelectEntries } from './pruneSelect';
@@ -48,6 +57,10 @@ export type SidebarView = 'agents' | 'history';
 export type HistorySort = 'Name' | 'Created' | 'Edited';
 
 const WORKFLOW_FILE = 'add-tests-and-refactor.workflow.yaml';
+
+const isTypingTarget = (target: EventTarget | null): boolean =>
+  target instanceof HTMLElement &&
+  (target.isContentEditable || target.closest('input, textarea, select') !== null);
 
 export function App() {
   const [view, setView] = useState<SidebarView>('agents');
@@ -78,6 +91,15 @@ export function App() {
   const [historySort, setHistorySort] = useState<HistorySort>('Edited');
   const [theme, setThemeState] = useState<Theme>(() => getStoredTheme() ?? 'dark');
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  // The inspector's placement survives hiding: "hidden" is a flag over the last
+  // visible placement, so the toggle brings back floating or docked as it was.
+  const [inspectorPlacement, setInspectorPlacement] = useState<InspectorPlacement>(() => {
+    const stored = readInspectorMode();
+    return stored === 'hidden' ? 'docked' : stored;
+  });
+  const [inspectorHidden, setInspectorHidden] = useState(() => readInspectorMode() === 'hidden');
+  const [inspectorWidth, setInspectorWidth] = useState(() => readInspectorWidth());
+  const inspectorMode: InspectorMode = inspectorHidden ? 'hidden' : inspectorPlacement;
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [mode, setMode] = useState<WorkflowCanvasMode>('edit');
   const [observing, setObserving] = useState(false);
@@ -152,6 +174,31 @@ export function App() {
     },
     [view],
   );
+
+  useEffect(() => writeInspectorMode(inspectorMode), [inspectorMode]);
+  useEffect(() => writeInspectorWidth(inspectorWidth), [inspectorWidth]);
+
+  const onToggleSidebar = useCallback(() => setSidebarOpen((open) => !open), []);
+  const onToggleInspector = useCallback(() => setInspectorHidden((hidden) => !hidden), []);
+  const onHideInspector = useCallback(() => setInspectorHidden(true), []);
+  const onShowInspector = useCallback(() => setInspectorHidden(false), []);
+  const onToggleInspectorPlacement = useCallback(
+    () => setInspectorPlacement((placement) => (placement === 'docked' ? 'floating' : 'docked')),
+    [],
+  );
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!event.ctrlKey || event.metaKey || event.shiftKey || event.repeat) return;
+      if (event.key !== 'b' && event.key !== 'B') return;
+      if (isTypingTarget(event.target)) return;
+      event.preventDefault();
+      if (event.altKey) onToggleInspector();
+      else onToggleSidebar();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [onToggleInspector, onToggleSidebar]);
 
   // Edge-lens field toggle (docs/12 D4): flip one upstream field on the TARGET
   // node's `input.select`. The lens stores nothing itself — `select` lists the
@@ -472,6 +519,26 @@ export function App() {
           .map((entry) => ({ name: entry.name, workflow: entry.workflow }))
       : [];
 
+  const inspector = selectedNode && inspectorMode !== 'hidden' && (
+    <Inspector
+      node={selectedNode}
+      incoming={incoming}
+      outgoingTo={outgoingTo}
+      embeddable={embeddable}
+      existingIds={nodes.map((node) => node.id)}
+      jsonOut={isJsonOut(selectedNode.id, nodes, edges)}
+      onChangeDefinition={onChangeDefinition}
+      onRenameNode={onRenameNode}
+      onChangeTriggers={onChangeTriggers}
+      placement={inspectorMode}
+      onTogglePlacement={onToggleInspectorPlacement}
+      onHide={onHideInspector}
+      width={inspectorMode === 'docked' ? inspectorWidth : undefined}
+      onResizeWidth={inspectorMode === 'docked' ? setInspectorWidth : undefined}
+    />
+  );
+  const docked = inspector && inspectorMode === 'docked';
+
   return (
     <div className="agentry-shell">
       <Toolbar
@@ -489,13 +556,17 @@ export function App() {
         onProjectRootChange={onProjectRootChange}
         panelPort={panelPortText}
         onPanelPortChange={setPanelPortText}
+        sidebarOpen={sidebarOpen}
+        onToggleSidebar={onToggleSidebar}
+        inspectorVisible={!inspectorHidden}
+        onToggleInspector={onToggleInspector}
       />
 
       <div
         className="agentry-body"
         style={{
           gridTemplateColumns: `52px ${sidebarOpen ? '264px' : '0px'} minmax(0, 1fr) ${
-            selectedNode ? '324px' : '0px'
+            docked ? `${inspectorWidth}px` : '0px'
           }`,
         }}
       >
@@ -534,20 +605,20 @@ export function App() {
             onToggleEdgeField={onToggleEdgeField}
             fitKey={fitKey}
           />
+          {inspector && inspectorMode === 'floating' && <InspectorFloat>{inspector}</InspectorFloat>}
+          {selectedNode && inspectorMode === 'hidden' && (
+            <button
+              type="button"
+              className="agentry-inspector-tab"
+              title="Show inspector (Ctrl+Alt+B)"
+              onClick={onShowInspector}
+            >
+              <PanelRightIcon size={14} />
+              <span className="agentry-inspector-tab__label">Inspector</span>
+            </button>
+          )}
         </main>
-        {selectedNode && (
-          <Inspector
-            node={selectedNode}
-            incoming={incoming}
-            outgoingTo={outgoingTo}
-            embeddable={embeddable}
-            existingIds={nodes.map((node) => node.id)}
-            jsonOut={isJsonOut(selectedNode.id, nodes, edges)}
-            onChangeDefinition={onChangeDefinition}
-            onRenameNode={onRenameNode}
-            onChangeTriggers={onChangeTriggers}
-          />
-        )}
+        {docked && inspector}
       </div>
 
       <StatusBar

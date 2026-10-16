@@ -16,4 +16,5 @@ First public version. Everything below is what the project contains so far.
 - opencode plugin that runs a workflow: parallel waves, a checkpoint after every step so a run can resume, a live panel in its own window, and a Markdown run report from the documenter node.
 - Triggers (`on:` file, schedule, web page, mailbox, git push) and `agentry-watch`, which starts opencode when needed and runs the workflow.
 - 15 color themes, shared by the editor and the live panel.
+- The node inspector can pop out into a floating panel over the canvas, be hidden, or be resized when docked, and both side panels have toolbar toggles with shortcuts (Ctrl+B, Ctrl+Alt+B).
 - Release tooling: CI on every pull request, one version for every package, and a tag-driven release workflow.

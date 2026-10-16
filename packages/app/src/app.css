@@ -122,6 +122,45 @@ button {
   gap: var(--agentry-space-base);
 }
 
+.agentry-toolbar__divider {
+  width: 1px;
+  height: 18px;
+  margin: 0 var(--agentry-space-sm);
+  background: var(--agentry-color-border-default);
+}
+
+.agentry-toolbar__layout {
+  display: flex;
+  align-items: center;
+  gap: var(--agentry-space-xs);
+}
+
+.agentry-layoutbtn {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  background: transparent;
+  border-radius: var(--agentry-radius-sm);
+  color: var(--agentry-color-text-muted);
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+
+.agentry-layoutbtn:hover {
+  background: var(--agentry-color-bg-elevated);
+  color: var(--agentry-color-text-primary);
+}
+
+.agentry-layoutbtn.is-active {
+  color: var(--agentry-color-text-secondary);
+}
+
+.agentry-layoutbtn.is-active:hover {
+  color: var(--agentry-color-text-primary);
+}
+
 .agentry-btn {
   display: inline-flex;
   align-items: center;
@@ -864,11 +903,212 @@ button {
 }
 
 .agentry-inspector {
+  position: relative;
   display: flex;
   flex-direction: column;
   min-height: 0;
   background: var(--agentry-color-bg-base);
   border-left: 1px solid var(--agentry-color-border-subtle);
+}
+
+/* Docked sash: a 6px grab strip straddling the inspector's left border. Like
+   VS Code's, it stays invisible until hovered, then paints the accent line. */
+.agentry-inspector__sash {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -3px;
+  width: 6px;
+  z-index: 2;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.agentry-inspector__sash::after {
+  content: '';
+  position: absolute;
+  inset: 0 2px;
+  background: var(--agentry-color-accent);
+  opacity: 0;
+  transition: opacity 0.12s ease 0.2s;
+}
+
+.agentry-inspector__sash:hover::after,
+.agentry-drag--col .agentry-inspector__sash::after {
+  opacity: 1;
+}
+
+.agentry-inspector__actions {
+  display: inline-flex;
+  gap: var(--agentry-space-xs);
+  margin-left: auto;
+  flex: none;
+}
+
+/* Floating inspector: an overlay inside the canvas region (never over the
+   toolbar, activity bar, status bar), above React Flow's panels (z 5) and
+   below the modal dialogs (z 50). Sized/positioned inline by InspectorFloat. */
+.agentry-inspector-float {
+  position: absolute;
+  z-index: 20;
+  display: flex;
+  background: var(--agentry-color-bg-base);
+  border: 1px solid var(--agentry-color-border-default);
+  border-radius: var(--agentry-radius-lg);
+  box-shadow: var(--agentry-shadow-lg);
+  overflow: hidden;
+}
+
+.agentry-inspector-float > .agentry-inspector {
+  flex: 1;
+  min-width: 0;
+  border-left: 0;
+}
+
+.agentry-inspector--floating .agentry-inspector__head {
+  cursor: grab;
+  user-select: none;
+  background: var(--agentry-color-bg-surface);
+}
+
+.agentry-drag--move .agentry-inspector--floating .agentry-inspector__head {
+  cursor: grabbing;
+}
+
+.agentry-inspector-float__handle {
+  position: absolute;
+  z-index: 2;
+  touch-action: none;
+}
+
+.agentry-inspector-float__handle--left {
+  top: 0;
+  bottom: 14px;
+  left: 0;
+  width: 6px;
+  cursor: ew-resize;
+}
+
+.agentry-inspector-float__handle--bottom {
+  left: 14px;
+  right: 0;
+  bottom: 0;
+  height: 6px;
+  cursor: ns-resize;
+}
+
+.agentry-inspector-float__handle--corner {
+  left: 0;
+  bottom: 0;
+  width: 14px;
+  height: 14px;
+  cursor: nesw-resize;
+}
+
+.agentry-inspector-float__handle::before,
+.agentry-inspector-float__handle::after {
+  content: '';
+  position: absolute;
+  background: var(--agentry-color-accent);
+  opacity: 0;
+  transition: opacity 0.12s ease 0.2s;
+}
+
+.agentry-inspector-float__handle--left::after,
+.agentry-inspector-float__handle--corner::before {
+  inset: 0 auto 0 0;
+  width: 2px;
+}
+
+.agentry-inspector-float__handle--bottom::after,
+.agentry-inspector-float__handle--corner::after {
+  inset: auto 0 0 0;
+  height: 2px;
+}
+
+.agentry-inspector-float__handle:hover::before,
+.agentry-inspector-float__handle:hover::after,
+.agentry-drag--ew .agentry-inspector-float__handle--left::after,
+.agentry-drag--ns .agentry-inspector-float__handle--bottom::after,
+.agentry-drag--nesw .agentry-inspector-float__handle--corner::before,
+.agentry-drag--nesw .agentry-inspector-float__handle--corner::after {
+  opacity: 1;
+}
+
+/* Hidden inspector + a selected node: a slim tab on the canvas's right edge
+   that brings the panel back in whichever placement it was hidden from. */
+.agentry-inspector-tab {
+  position: absolute;
+  top: var(--agentry-space-xl);
+  right: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--agentry-space-base);
+  padding: var(--agentry-space-base) 0 var(--agentry-space-lg);
+  width: 24px;
+  background: var(--agentry-color-bg-base);
+  border: 1px solid var(--agentry-color-border-default);
+  border-right: 0;
+  border-radius: var(--agentry-radius-md) 0 0 var(--agentry-radius-md);
+  box-shadow: var(--agentry-shadow-sm);
+  color: var(--agentry-color-text-muted);
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+
+.agentry-inspector-tab:hover {
+  background: var(--agentry-color-bg-elevated);
+  color: var(--agentry-color-text-primary);
+}
+
+.agentry-inspector-tab__label {
+  writing-mode: vertical-rl;
+  font-size: 10px;
+  font-weight: var(--agentry-fw-semibold);
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+/* Body-level drag states (set by startPointerDrag): keep the cursor while the
+   captured pointer crosses other elements, block text selection, and freeze
+   the grid transition so a dragged sash tracks the pointer instead of easing. */
+.agentry-drag--col,
+.agentry-drag--col * {
+  cursor: col-resize !important;
+}
+
+.agentry-drag--move,
+.agentry-drag--move * {
+  cursor: grabbing !important;
+}
+
+.agentry-drag--ew,
+.agentry-drag--ew * {
+  cursor: ew-resize !important;
+}
+
+.agentry-drag--ns,
+.agentry-drag--ns * {
+  cursor: ns-resize !important;
+}
+
+.agentry-drag--nesw,
+.agentry-drag--nesw * {
+  cursor: nesw-resize !important;
+}
+
+.agentry-drag--col,
+.agentry-drag--move,
+.agentry-drag--ew,
+.agentry-drag--ns,
+.agentry-drag--nesw {
+  user-select: none;
+}
+
+.agentry-drag--col .agentry-body {
+  transition: none;
 }
 
 .agentry-inspector__empty {
