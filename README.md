@@ -107,6 +107,7 @@ workflow: [find_bugs, check_security, summarize]
 | `input.select` | Pass only the listed fields of an upstream's output to this step. |
 | `trigger.when` | Run the step only if an upstream's output contains or equals a value; otherwise it is skipped. |
 | `trigger.loop` | Run the step again until `exit_when` matches, at most `max` times. |
+| `input.feedback` | Loop back from a later step: while the output of `from` matches `when`, this step and every step up to `from` run again with that output as feedback, at most `max` extra rounds. A loop also ends when `from` says the same thing twice in a row, and a run with loops stops after 200 step runs. In the editor, draw the edge from the later step back to this one. |
 | `type: branch`, `branch_on`, `routes` | Read one field of the step's output and continue on the first route whose condition matches. |
 | `type: tool`, `tool` | A step that runs without a model; see [Tool steps](#tool-steps). |
 | `on` | Start the workflow by itself: `file`, `schedule`, `web`, `mail` or `git`. |

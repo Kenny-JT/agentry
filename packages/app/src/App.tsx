@@ -4,6 +4,7 @@ import {
   edgeId,
   graphToWorkflow,
   isJsonOut,
+  loopEdgeIds,
   orderedRouteTargets,
   useEdgesState,
   resolveVolumeOverlaps,
@@ -493,9 +494,14 @@ export function App() {
   const selectedNode = nodes.find((node) => node.selected) ?? null;
   const definitionById = (id: string): AgentDefinition | undefined =>
     nodes.find((node) => node.id === id)?.data.definition;
+  // a loop-back edge feeds its head as feedback, not as an input: the Inspector shows it apart
+  const loops = loopEdgeIds(nodes, edges);
+  const loopFrom = selectedNode
+    ? edges.find((edge) => edge.target === selectedNode.id && loops.has(edge.id))?.source
+    : undefined;
   const incoming: IncomingSource[] = selectedNode
     ? edges
-        .filter((edge) => edge.target === selectedNode.id)
+        .filter((edge) => edge.target === selectedNode.id && !loops.has(edge.id))
         .map((edge) => {
           const def = definitionById(edge.source);
           return {
@@ -506,7 +512,7 @@ export function App() {
         })
     : [];
   const outgoingTargets = selectedNode
-    ? edges.filter((edge) => edge.source === selectedNode.id).map((edge) => edge.target)
+    ? edges.filter((edge) => edge.source === selectedNode.id && !loops.has(edge.id)).map((edge) => edge.target)
     : [];
   const outgoingTo =
     selectedNode?.data.definition.type === 'branch'
@@ -523,6 +529,7 @@ export function App() {
     <Inspector
       node={selectedNode}
       incoming={incoming}
+      loopFrom={loopFrom}
       outgoingTo={outgoingTo}
       embeddable={embeddable}
       existingIds={nodes.map((node) => node.id)}

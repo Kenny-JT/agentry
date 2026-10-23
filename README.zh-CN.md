@@ -107,6 +107,7 @@ workflow: [find_bugs, check_security, summarize]
 | `input.select` | 只把上游输出里列出的字段传给这一步。 |
 | `trigger.when` | 上游输出包含或等于某个值时才执行这一步，否则跳过。 |
 | `trigger.loop` | 重复执行这一步，直到 `exit_when` 满足，最多 `max` 次。 |
+| `input.feedback` | 从后面的步骤绕回来：只要 `from` 的输出满足 `when`，从这一步到 `from` 的所有步骤就带着这段输出作为反馈再跑一轮，最多再跑 `max` 轮。`from` 连续两轮说的一样也会停；带循环的一次运行最多执行 200 个步骤。在编辑器里，从后面的步骤往回连到这一步即可。 |
 | `type: branch`、`branch_on`、`routes` | 读取这一步输出里的一个字段，走第一条条件满足的路线。 |
 | `type: tool`、`tool` | 不经过模型的步骤，见下面的[工具步骤](#工具步骤)。 |
 | `on` | 让 workflow 自己启动：`file`、`schedule`、`web`、`mail` 或 `git`。 |
