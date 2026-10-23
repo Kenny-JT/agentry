@@ -1,5 +1,5 @@
 import type { SidebarView } from '../App';
-import { AgentsIcon, HistoryIcon, MoonIcon, SettingsIcon, SunIcon } from './icons';
+import { AgentsIcon, HistoryIcon, MoonIcon, SettingsIcon, SunIcon, TemplatesIcon } from './icons';
 import { getThemeMode } from '@agentry/design';
 import type { Theme } from '@agentry/design';
 
@@ -14,6 +14,7 @@ export interface ActivityBarProps {
 
 const items: ReadonlyArray<{ id: SidebarView; label: string; Icon: typeof AgentsIcon }> = [
   { id: 'agents', label: 'Agents', Icon: AgentsIcon },
+  { id: 'templates', label: 'Templates', Icon: TemplatesIcon },
   { id: 'history', label: 'History', Icon: HistoryIcon },
 ];
 

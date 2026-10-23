@@ -42,6 +42,16 @@ export function AgentsIcon({ size = 20, className }: IconProps) {
   );
 }
 
+export function TemplatesIcon({ size = 20, className }: IconProps) {
+  return (
+    <svg {...base(size, className)}>
+      <rect x="3.5" y="3.5" width="17" height="6.5" rx="1.6" />
+      <rect x="3.5" y="13.5" width="7" height="7" rx="1.6" />
+      <path d="M14 14.5h6.5M14 17.5h6.5M14 20.5h4" />
+    </svg>
+  );
+}
+
 export function HistoryIcon({ size = 20, className }: IconProps) {
   return (
     <svg {...base(size, className)}>

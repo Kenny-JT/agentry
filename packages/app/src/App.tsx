@@ -54,8 +54,9 @@ import { getStoredProjectRoot, pushPanelTheme, storeProjectRoot } from './panelD
 import { pruneSelectEntries } from './pruneSelect';
 import { renameDefinitionRefs } from './renameRefs';
 import { useRunEvents } from './useRunEvents';
+import type { WorkflowTemplate } from './templates';
 
-export type SidebarView = 'agents' | 'history';
+export type SidebarView = 'agents' | 'templates' | 'history';
 export type HistorySort = 'Name' | 'Created' | 'Edited';
 
 const WORKFLOW_FILE = 'add-tests-and-refactor.workflow.yaml';
@@ -391,6 +392,19 @@ export function App() {
     }
   }, [setMeta, setNodes, setEdges]);
 
+  const onOpenTemplate = useCallback(
+    (template: WorkflowTemplate) => {
+      const graph = workflowToGraph(template.workflow);
+      setMeta(graph.meta);
+      setNodes(resolveVolumeOverlaps(graph.nodes));
+      setEdges(graph.edges);
+      setWorkflowName(`${template.id}.workflow.yaml`);
+      setSavedId(null);
+      setFitKey((key) => key + 1);
+    },
+    [setMeta, setNodes, setEdges],
+  );
+
   const onImportSubworkflow = useCallback(async () => {
     const file = await openYamlFile();
     if (!file) return;
@@ -591,6 +605,7 @@ export function App() {
             view={view}
             onAddAgent={onAddAgent}
             onImportSubworkflow={onImportSubworkflow}
+            onOpenTemplate={onOpenTemplate}
             history={{
               items: saved,
               sort: historySort,

@@ -1,0 +1,86 @@
+# Triage open GitHub issues
+# Use when: open issues are piling up on a public repository and you want each one sorted, prioritised and the urgent ones called out.
+# Tags: github, triage
+#
+# Flow: fetch_issues -> triage -> write_report -> save_report
+# fetch_issues calls the GitHub API without a model. Give the repository as owner/name.
+
+introduction: Fetch a repository's open issues and sort them by kind and urgency
+type: pipeline
+input:
+  description: "The repository as owner/name, for example facebook/react."
+  to: [fetch_issues]
+output:
+  description: "A triage report at .agentry/output/triage.md"
+  from: [save_report]
+
+agents:
+  fetch_issues:
+    introduction: Fetch the newest open issues
+    type: tool
+    tool:
+      kind: http
+      url: "https://api.github.com/search/issues?q=repo:{input}+is:issue+is:open&sort=created&order=desc&per_page=30"
+      headers:
+        Accept: application/vnd.github+json
+        User-Agent: agentry
+      timeout_s: 30
+    output:
+      schema: { status: number, ok: boolean, content_type: string, body: any }
+
+  triage:
+    introduction: Sort every issue by kind and priority
+    type: straight
+    input:
+      from: fetch_issues
+      select: { fetch_issues: [body] }
+    output:
+      schema: { issues: "string[]", urgent: "string[]", duplicates: "string[]" }
+    prompt: |
+      The context holds the open issues of a repository as GitHub search results (`items`).
+      For every issue decide:
+      - its kind: bug, feature, question, docs, or needs-info when the report is too thin
+      - its priority: high (data loss, security, crashes, many users blocked), medium, low
+      - a one-line summary in your own words
+
+      Return `issues` (one entry per issue: "#123 - kind - priority - summary"), `urgent`
+      (the high-priority ones with one sentence on why) and `duplicates` (groups of issues
+      that report the same thing: "#12, #40 - what they share"). If the search returned an
+      error or no items, say so in `issues` and leave the rest empty.
+    agent_mapping:
+      opencode: general
+
+  write_report:
+    introduction: Write the triage report
+    type: straight
+    input:
+      from: triage
+    output:
+      schema: { report: string }
+    prompt: |
+      Write a triage report from the context as Markdown: a "# Issue triage" heading, then
+      "## Urgent", "## Bugs", "## Features", "## Questions and docs", "## Needs more
+      information" and "## Possible duplicates" sections. Order each section by priority and
+      keep the issue numbers. Skip empty sections.
+
+      Return the Markdown as `report`.
+    agent_mapping:
+      opencode: general
+
+  save_report:
+    introduction: Save the report
+    type: tool
+    input:
+      from: write_report
+    tool:
+      kind: write_file
+      path: .agentry/output/triage.md
+      content: "{write_report.report}"
+    output:
+      schema: { path: string, bytes: number, mode: string }
+
+workflow:
+  - fetch_issues
+  - triage
+  - write_report
+  - save_report

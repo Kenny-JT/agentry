@@ -1,0 +1,121 @@
+# Fix a bug
+# Use when: you can describe a bug (what you did, what you expected, what happened) and want it found, fixed and checked against the tests.
+# Tags: code, bug
+#
+# Flow: locate -> fix -> verify -> (pass: summarize | fail: diagnose) -> save_report
+# verify takes one of the two paths; save_report runs once, on whichever path ran.
+
+introduction: Find the cause of a bug, fix it and check the fix with the project's tests
+type: pipeline
+input:
+  description: "The bug: what you did, what you expected and what happened instead. Error messages and file names help."
+  to: [locate]
+output:
+  description: "A short report on the fix, or on what still fails, at .agentry/output/bugfix.md"
+  from: [save_report]
+
+agents:
+  locate:
+    introduction: Find where the bug comes from
+    type: straight
+    output:
+      schema: { cause: string, files: "string[]", reproduce: string }
+    prompt: |
+      The bug report is in the context. Find where the bug comes from; do not change any
+      file yet.
+
+      - Search the project for the code the report touches and read it.
+      - Work out the root cause, not just the line where the error shows.
+      - Work out how to reproduce it: a command, a test, or the steps.
+
+      Return `cause` (two or three sentences), `files` (the files that need to change) and
+      `reproduce` (how to see the bug).
+    agent_mapping:
+      opencode: explore
+
+  fix:
+    introduction: Fix the root cause
+    type: straight
+    input:
+      from: locate
+    output:
+      schema: { changes: "string[]", summary: string }
+    prompt: |
+      Fix the bug described in the context at its root cause, with the smallest change that
+      does it. When the project has tests, add or update one that fails without the fix.
+      Leave unrelated code as it is.
+
+      Return `changes` (one entry per file: "file - what changed") and `summary` (one
+      sentence).
+    agent_mapping:
+      opencode: build
+
+  verify:
+    introduction: Run the tests and say whether the fix holds
+    type: branch
+    branch_on: status
+    input:
+      from: fix
+    routes:
+      - to: summarize
+        when: { equals: pass }
+      - to: diagnose
+    output:
+      schema: { status: string, details: string }
+    prompt: |
+      Find out how this project runs its tests (package.json scripts, Makefile, README, CI
+      config) and run them. If there are none, run the reproduction from the context.
+
+      Set `status` to exactly "pass" when everything passes and the bug no longer shows,
+      otherwise to "fail". Put the failing tests or the remaining problem in `details`.
+    agent_mapping:
+      opencode: build
+
+  summarize:
+    introduction: Write up the fix
+    type: straight
+    input:
+      from: [locate, fix]
+    output:
+      schema: { report: string }
+    prompt: |
+      The bug is fixed and the tests pass. Write `report` as Markdown a reviewer can read in
+      a minute: a "# Bug fix" heading, the cause, what changed file by file, and how it was
+      checked.
+    agent_mapping:
+      opencode: general
+
+  diagnose:
+    introduction: Explain what still fails
+    type: straight
+    input:
+      from: [locate, fix]
+    output:
+      schema: { report: string }
+    prompt: |
+      A fix was made but the check failed. Do not change any file. Write `report` as
+      Markdown: a "# Fix incomplete" heading, what was changed, what still fails (quote the
+      failing tests or errors) and the most likely next step.
+    agent_mapping:
+      opencode: explore
+
+  save_report:
+    introduction: Save the report
+    type: tool
+    input:
+      from: [summarize, diagnose]
+      join: any
+    tool:
+      kind: write_file
+      path: .agentry/output/bugfix.md
+      content: "{summarize.report}{diagnose.report}"
+    output:
+      schema: { path: string, bytes: number, mode: string }
+
+workflow:
+  - locate
+  - fix
+  - verify
+  - summarize
+  - diagnose
+  - save_report
