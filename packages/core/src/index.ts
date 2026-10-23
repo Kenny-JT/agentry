@@ -5,4 +5,5 @@ export * from './artifacts';
 export * from './serialize';
 export * from './validate';
 export * from './runtime';
+export * from './loops';
 export * from './tool';

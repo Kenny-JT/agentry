@@ -7624,6 +7624,9 @@ function toolTemplateFields(spec) {
 
 // ../core/src/runtime.ts
 var fromList = (from) => from === void 0 ? [] : Array.isArray(from) ? from : [from];
+var FEEDBACK_DEFAULT_MAX = 3;
+var FEEDBACK_MAX_LIMIT = 10;
+var isValidFeedbackMax = (max) => typeof max === "number" && Number.isInteger(max) && max >= 1 && max <= FEEDBACK_MAX_LIMIT;
 var isRecord3 = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
 function matchesCondition(output, cond) {
   const lower = output.toLowerCase().trim();
@@ -7764,6 +7767,18 @@ function checkRunnable(raw) {
     if (input?.join !== void 0 && input.join !== "all" && input.join !== "any") {
       errors.push(`agents.${id}.input.join: expected "all" or "any", got ${JSON.stringify(input.join)}`);
     }
+    if (input?.feedback !== void 0) {
+      const feedback = input.feedback;
+      if (!isRecord3(feedback)) errors.push(`agents.${id}.input.feedback: expected object`);
+      else {
+        if (typeof feedback.from !== "string") errors.push(`agents.${id}.input.feedback.from: required string`);
+        else if (!ids.has(feedback.from)) errors.push(`agents.${id}.input.feedback.from: references unknown agent "${feedback.from}"`);
+        if (feedback.when !== void 0 && !isRecord3(feedback.when)) errors.push(`agents.${id}.input.feedback.when: expected object`);
+        if (feedback.max !== void 0 && !isValidFeedbackMax(feedback.max)) {
+          errors.push(`agents.${id}.input.feedback.max: expected an integer from 1 to ${FEEDBACK_MAX_LIMIT}`);
+        }
+      }
+    }
     if (input?.select !== void 0) {
       if (!isRecord3(input.select)) errors.push(`agents.${id}.input.select: expected an object of upstream id -> field list`);
       else {
@@ -7806,6 +7821,79 @@ function checkRunnable(raw) {
   return errors.length ? { ok: false, errors } : { ok: true, workflow: raw };
 }
 
+// ../core/src/loops.ts
+var RUN_EXECUTION_BUDGET = 200;
+function dependencyGraph(workflow) {
+  const parents = branchParents(workflow);
+  const deps = /* @__PURE__ */ new Map();
+  for (const [id, def] of Object.entries(workflow.agents)) {
+    const upstream = [...fromList(def.input?.from)];
+    for (const parent of parents.get(id) ?? []) if (!upstream.includes(parent)) upstream.push(parent);
+    const gate = def.trigger?.when?.from;
+    if (gate && !upstream.includes(gate)) upstream.push(gate);
+    deps.set(id, upstream.filter((dep) => workflow.agents[dep] !== void 0));
+  }
+  return deps;
+}
+function findCycles(deps) {
+  const cycles = [];
+  const reported = /* @__PURE__ */ new Set();
+  const done = /* @__PURE__ */ new Set();
+  const stack = [];
+  const onStack = /* @__PURE__ */ new Set();
+  const visit = (id) => {
+    if (done.has(id)) return;
+    if (onStack.has(id)) {
+      const cycle = stack.slice(stack.indexOf(id));
+      const key = [...cycle].sort().join("\0");
+      if (!reported.has(key)) {
+        reported.add(key);
+        cycles.push(cycle);
+      }
+      return;
+    }
+    stack.push(id);
+    onStack.add(id);
+    for (const dep of deps.get(id) ?? []) visit(dep);
+    stack.pop();
+    onStack.delete(id);
+    done.add(id);
+  };
+  for (const id of deps.keys()) visit(id);
+  return cycles.map((cycle) => {
+    const flowOrder = [...cycle].reverse();
+    const start = flowOrder.indexOf(cycle[0] ?? "");
+    return [...flowOrder.slice(start), ...flowOrder.slice(0, start)];
+  });
+}
+function reach(start, step) {
+  const seen = /* @__PURE__ */ new Set();
+  const queue = [start];
+  for (let current = queue.shift(); current !== void 0; current = queue.shift()) {
+    for (const next of step(current)) {
+      if (seen.has(next)) continue;
+      seen.add(next);
+      queue.push(next);
+    }
+  }
+  return seen;
+}
+function feedbackLoopBody(workflow, nodeId) {
+  const from = workflow.agents[nodeId]?.input?.feedback?.from;
+  if (!from || !workflow.agents[from]) return null;
+  const deps = dependencyGraph(workflow);
+  const children = /* @__PURE__ */ new Map();
+  for (const [id, upstream] of deps) {
+    for (const dep of upstream) children.set(dep, [...children.get(dep) ?? [], id]);
+  }
+  const downstream = reach(nodeId, (id) => children.get(id) ?? []);
+  if (!downstream.has(from)) return null;
+  const ancestors = reach(from, (id) => deps.get(id) ?? []);
+  const body = /* @__PURE__ */ new Set([nodeId, from]);
+  for (const id of downstream) if (ancestors.has(id)) body.add(id);
+  return body;
+}
+
 // ../core/src/validate.ts
 var asList = (from) => from === void 0 ? [] : Array.isArray(from) ? from : [from];
 function toolIssues(id, def, sources) {
@@ -7832,6 +7920,24 @@ function toolIssues(id, def, sources) {
   }
   return issues;
 }
+function feedbackIssues(id, workflow) {
+  const feedback = workflow.agents[id]?.input?.feedback;
+  if (!feedback) return [];
+  const issues = [];
+  const from = feedback.from;
+  if (!workflow.agents[from]) {
+    issues.push({ severity: "error", code: "feedback-unknown", nodeId: id, field: from, message: `"${id}" loops back from "${from}", which is not a node in this workflow.` });
+  } else if (!feedbackLoopBody(workflow, id)) {
+    issues.push({ severity: "error", code: "feedback-not-loop", nodeId: id, field: from, message: `"${id}" loops back from "${from}", but "${from}" is not downstream of "${id}" — a loop-back edge must return from a node this one leads to.` });
+  }
+  if (feedback.max !== void 0 && !isValidFeedbackMax(feedback.max)) {
+    issues.push({ severity: "error", code: "feedback-max", nodeId: id, field: "max", message: `"${id}" loops back with max ${JSON.stringify(feedback.max)}; expected a whole number from 1 to ${FEEDBACK_MAX_LIMIT}.` });
+  }
+  if (!feedback.when || Object.keys(feedback.when).length === 0) {
+    issues.push({ severity: "warning", code: "loop-no-exit", nodeId: id, message: `"${id}" loops back from "${from}" without a condition, so it always runs the full ${feedback.max ?? "default"} extra rounds.` });
+  }
+  return issues;
+}
 function validateWorkflow(workflow) {
   const issues = [];
   const agents = workflow.agents ?? {};
@@ -7841,10 +7947,25 @@ function validateWorkflow(workflow) {
   const parents = branchParents({ agents });
   const consumed = /* @__PURE__ */ new Set();
   const fed = /* @__PURE__ */ new Set();
+  for (const cycle of findCycles(dependencyGraph({ agents }))) {
+    const path3 = [...cycle, cycle[0]].map((node) => `"${node}"`).join(" → ");
+    issues.push({
+      severity: "error",
+      code: "cycle",
+      nodeId: cycle[0],
+      message: `${path3} is a cycle: every node waits for the one before it, so none can start. Turn one edge into a loop-back edge (input.feedback) to repeat these steps.`
+    });
+  }
   for (const id of ids) {
     const def = agents[id];
     if (!def) continue;
     if (def.type === "tool") issues.push(...toolIssues(id, def, inputSources(def, parents.get(id) ?? [])));
+    const feedback = feedbackIssues(id, { agents });
+    issues.push(...feedback);
+    if (def.input?.feedback && !feedback.some((issue) => issue.severity === "error")) {
+      consumed.add(def.input.feedback.from);
+      fed.add(id);
+    }
     for (const from of asList(def.input?.from)) {
       if (has(from)) {
         consumed.add(from);
@@ -8973,7 +9094,14 @@ function buildDag(wf) {
     const upstream = [...sources];
     const gate = def.trigger?.when?.from;
     if (gate && !upstream.includes(gate)) upstream.push(gate);
-    nodes.set(id, { id, def, upstream, sources, branchParents: bp });
+    const node = { id, def, upstream, sources, branchParents: bp };
+    const feedback = def.input?.feedback;
+    if (feedback) {
+      const body = feedbackLoopBody(wf, id);
+      if (!body) throw new Error(`"${id}" loops back from "${feedback.from}", which is not downstream of it`);
+      node.loop = { from: feedback.from, when: feedback.when, max: feedback.max ?? FEEDBACK_DEFAULT_MAX, body };
+    }
+    nodes.set(id, node);
   }
   for (const node of nodes.values()) {
     if (node.def.type !== "documenter") continue;
@@ -9632,11 +9760,20 @@ ${slice.text}` });
   }
   return { parts, notices };
 }
-function buildPrompt(def, outputs, previousOutput, parents, runRecords, inbound) {
+var feedbackSection = (feedback) => `Feedback from "${feedback.from}" (round ${feedback.round + 1}):
+
+${feedback.text}`;
+function buildPrompt(def, outputs, parents, extras) {
+  const { inbound, feedback, previousOutput, runRecords } = extras;
   let prompt = def.prompt ?? "";
   if (inbound) prompt = `${inbound.label}:
 
 ${inbound.text}
+
+---
+
+${prompt}`;
+  if (feedback) prompt = `${feedbackSection(feedback)}
 
 ---
 
@@ -9745,7 +9882,7 @@ function runSubWorkflowBlackBox(nodeId, def, runDir, iter) {
   );
   return { nodeId, agent: "sub-workflow", output, ms: 0, schemaWarnings: [], notices: [], iteration: iter };
 }
-async function runSubWorkflow(ctx, dagNode, iter) {
+async function runSubWorkflow(ctx, dagNode, iter, feedback) {
   const { id: nodeId, def } = dagNode;
   const inner = def.tech_stack?.workflow;
   if (!isObj2(inner)) return runSubWorkflowBlackBox(nodeId, def, ctx.runDir, iter);
@@ -9754,9 +9891,18 @@ async function runSubWorkflow(ctx, dagNode, iter) {
   const innerWf = check.workflow;
   const subDir = path2.join(ctx.runDir, nodeId);
   fs2.mkdirSync(subDir, { recursive: true });
-  const dag = buildDag(innerWf);
+  let dag;
+  try {
+    dag = buildDag(innerWf);
+  } catch (err) {
+    return { nodeId, agent: "sub-workflow", output: "", ms: 0, schemaWarnings: [], notices: [], iteration: iter, error: `sub-workflow invalid: ${errorMessage2(err)}` };
+  }
   const own = upstreamContext(def, ctx.outputs, dagNode.branchParents);
-  const inbound = [...own.parts.map((p) => p.text), ...def.input?.extra_info ? [`Additional context: ${def.input.extra_info}`] : []].join("\n\n---\n\n");
+  const inbound = [
+    ...own.parts.map((p) => p.text),
+    ...feedback ? [feedbackSection(feedback)] : [],
+    ...def.input?.extra_info ? [`Additional context: ${def.input.extra_info}`] : []
+  ].join("\n\n---\n\n");
   const innerCtx = {
     ...ctx,
     runDir: subDir,
@@ -9785,7 +9931,7 @@ async function runSubWorkflow(ctx, dagNode, iter) {
   const schemaWarnings = st.schemaWarnings.map((w) => `${nodeId}/${w}`);
   const ms = Date.now() - t0;
   if (outcome.status !== "ok") {
-    const error = outcome.status === "failed" ? `sub-workflow "${nodeId}" failed at ${outcome.first.nodeId}: ${outcome.first.error}` : outcome.status === "deadlock" ? `sub-workflow "${nodeId}" deadlock (${outcome.stuck} node(s) stuck)` : `sub-workflow "${nodeId}" stopped by user`;
+    const error = outcome.status === "failed" ? `sub-workflow "${nodeId}" failed at ${outcome.first.nodeId}: ${outcome.first.error}` : outcome.status === "deadlock" ? `sub-workflow "${nodeId}" deadlock (${outcome.stuck} node(s) stuck)` : outcome.status === "budget" ? `sub-workflow "${nodeId}": ${outcome.message}` : `sub-workflow "${nodeId}" stopped by user`;
     return { nodeId, agent: "sub-workflow", output: "", ms, schemaWarnings, notices, iteration: iter, error };
   }
   const lastId = dag.order[dag.order.length - 1];
@@ -9814,10 +9960,12 @@ async function callAgent(client, sessionId, agent, text) {
   const result = await client.session.prompt({ path: { id: sessionId }, body: { agent, parts: [{ type: "text", text }] } });
   return extractText(result.data?.parts ?? result.parts ?? []);
 }
-async function runToolNode(ctx, dagNode, iter) {
+async function runToolNode(ctx, dagNode, iter, feedback) {
   const { id: nodeId, def } = dagNode;
   const agent = toolAgentLabel(def.tool);
   const t0 = Date.now();
+  const sources = feedback ? [...dagNode.sources, feedback.from] : dagNode.sources;
+  const outputs = feedback ? new Map([...ctx.outputs, [feedback.from, feedback.text]]) : ctx.outputs;
   const fail = (error, resolved = [], notices = []) => {
     const ms = Date.now() - t0;
     fs2.writeFileSync(
@@ -9844,7 +9992,7 @@ async function runToolNode(ctx, dagNode, iter) {
       spec: def.tool,
       projectDir: ctx.directory,
       runDir: ctx.runDir,
-      scope: { sources: dagNode.sources, outputs: ctx.outputs, input: ctx.inbound }
+      scope: { sources, outputs, input: ctx.inbound }
     });
     const ms = Date.now() - t0;
     for (const n of result.notices) log("warn", `tool ${ctx.scope}${nodeId}: ${n}`);
@@ -9877,10 +10025,10 @@ async function runToolNode(ctx, dagNode, iter) {
     return err instanceof ToolError ? fail(err.message, err.resolved, err.notices) : fail(errorMessage2(err));
   }
 }
-async function runSingleNode(ctx, dagNode, iter, previousOutput) {
+async function runSingleNode(ctx, dagNode, iter, extras) {
   const { id: nodeId, def } = dagNode;
-  if (def.type === "sub-workflow") return runSubWorkflow(ctx, dagNode, iter);
-  if (def.type === "tool") return runToolNode(ctx, dagNode, iter);
+  if (def.type === "sub-workflow") return runSubWorkflow(ctx, dagNode, iter, extras.feedback);
+  if (def.type === "tool") return runToolNode(ctx, dagNode, iter, extras.feedback);
   const mapped = def.agent_mapping?.opencode ?? "";
   let agent;
   try {
@@ -9888,8 +10036,11 @@ async function runSingleNode(ctx, dagNode, iter, previousOutput) {
   } catch (err) {
     return { nodeId, agent: mapped || "unknown", output: "", ms: 0, schemaWarnings: [], notices: [], iteration: iter, error: errorMessage2(err) };
   }
-  const records = def.type === "documenter" ? documenterRecords(ctx, nodeId) : void 0;
-  const built = buildPrompt(def, ctx.outputs, previousOutput, dagNode.branchParents, records, inboundFor(ctx, nodeId, def, dagNode.branchParents));
+  const built = buildPrompt(def, ctx.outputs, dagNode.branchParents, {
+    ...extras,
+    inbound: inboundFor(ctx, nodeId, def, dagNode.branchParents),
+    runRecords: def.type === "documenter" ? documenterRecords(ctx, nodeId) : void 0
+  });
   const prompt = built.prompt;
   const notices = built.notices.map((n) => ({ consumer: nodeId, ...n }));
   for (const n of notices) log("warn", `select ${n.from} → ${nodeId}: ${describeFallback(n.fallback)}`);
@@ -9971,9 +10122,13 @@ var newGraphState = (order) => ({
   completedOrder: [],
   skippedOrder: [],
   iterations: {},
+  loops: {},
+  executions: 0,
   timings: [],
-  schemaWarnings: []
+  schemaWarnings: [],
+  loopNotes: []
 });
+var describeLoopExit = (head, loop, exit, round) => exit === "max" ? `loop back to "${head}" ended: max ${loop.max} extra round(s) reached` : exit === "no-progress" ? `loop back to "${head}" stopped: "${loop.from}" produced the same output as the previous round (no progress)` : `loop back to "${head}" ended: condition no longer holds after round ${round}`;
 async function runGraph(ctx, dag, st, hooks) {
   const { runId } = ctx;
   const emit = hooks.emit;
@@ -9981,6 +10136,7 @@ async function runGraph(ctx, dag, st, hooks) {
   const skipped = new Set(st.skippedOrder);
   const settled = /* @__PURE__ */ new Set([...completed, ...skipped]);
   const pending = new Set(dag.order.filter((id) => !settled.has(id)));
+  const hasLoops = [...dag.nodes.values()].some((node) => node.loop !== void 0);
   const markSkipped = (id, reason) => {
     skipped.add(id);
     settled.add(id);
@@ -9997,6 +10153,63 @@ async function runGraph(ctx, dag, st, hooks) {
     const ordering = node.upstream.filter((d) => !node.sources.includes(d));
     return ordering.every((d) => settled.has(d)) && (node.sources.length === 0 || node.sources.some((s) => completed.has(s)));
   };
+  const reset = (toReset, keepIterations) => {
+    for (const id of toReset) {
+      completed.delete(id);
+      skipped.delete(id);
+      settled.delete(id);
+      pending.add(id);
+      ctx.outputs.delete(id);
+      st.nodeStates[id] = "pending";
+      if (!keepIterations) delete st.iterations[id];
+      emit({ type: "node.state", runId, nodeId: id, state: "pending", at: ts() });
+    }
+    const kept = (list) => list.filter((c) => !toReset.has(c));
+    st.completedOrder.splice(0, st.completedOrder.length, ...kept(st.completedOrder));
+    st.skippedOrder.splice(0, st.skippedOrder.length, ...kept(st.skippedOrder));
+    ctx.history.splice(0, ctx.history.length, ...ctx.history.filter((r) => !toReset.has(r.nodeId)));
+  };
+  const roundResetSet = (body) => {
+    const toReset = new Set(body);
+    for (let grew = true; grew; ) {
+      grew = false;
+      for (const id of skipped) {
+        if (toReset.has(id)) continue;
+        const node = dag.nodes.get(id);
+        if (node.upstream.length > 0 && node.upstream.every((dep) => toReset.has(dep))) {
+          toReset.add(id);
+          grew = true;
+        }
+      }
+    }
+    return toReset;
+  };
+  const decideLoops = (tail, output) => {
+    const restarted = [];
+    for (const head of dag.nodes.values()) {
+      const loop = head.loop;
+      if (!loop || loop.from !== tail) continue;
+      const previous = st.loops[head.id];
+      const round = previous?.round ?? 0;
+      const exit = loop.when && !matchesCondition(output, loop.when) ? "condition" : round >= loop.max ? "max" : previous && previous.text.trim() === output.trim() ? "no-progress" : null;
+      if (exit) {
+        const note2 = describeLoopExit(head.id, loop, exit, round + 1);
+        st.loopNotes.push(note2);
+        emit({ type: "node.output", runId, nodeId: tail, chunk: `↻ ${note2}`, at: ts() });
+        log(exit === "no-progress" ? "warn" : "info", `${ctx.scope}${note2}`);
+        delete st.loops[head.id];
+        continue;
+      }
+      st.loops[head.id] = { from: tail, round: round + 1, text: output };
+      for (const inner of dag.nodes.values()) if (inner.id !== head.id && inner.loop && loop.body.has(inner.id)) delete st.loops[inner.id];
+      reset(roundResetSet(loop.body), true);
+      restarted.push(head.id);
+      const note = `looping back to "${head.id}" (round ${round + 2}, max ${loop.max} extra)`;
+      emit({ type: "node.output", runId, nodeId: tail, chunk: `↻ ${note}`, at: ts() });
+      log("info", `${ctx.scope}${note}`);
+    }
+    return restarted;
+  };
   while (pending.size > 0) {
     if (abortFlag) {
       hooks.persist();
@@ -10005,20 +10218,7 @@ async function runGraph(ctx, dag, st, hooks) {
     const target = hooks.takeRerun();
     if (target && dag.nodes.has(target)) {
       const toReset = /* @__PURE__ */ new Set([target, ...findDownstream(target, dag)]);
-      for (const id of toReset) {
-        completed.delete(id);
-        skipped.delete(id);
-        settled.delete(id);
-        pending.add(id);
-        ctx.outputs.delete(id);
-        st.nodeStates[id] = "pending";
-        delete st.iterations[id];
-        emit({ type: "node.state", runId, nodeId: id, state: "pending", at: ts() });
-      }
-      const kept = (list) => list.filter((c) => !toReset.has(c));
-      st.completedOrder.splice(0, st.completedOrder.length, ...kept(st.completedOrder));
-      st.skippedOrder.splice(0, st.skippedOrder.length, ...kept(st.skippedOrder));
-      ctx.history.splice(0, ctx.history.length, ...ctx.history.filter((r) => !toReset.has(r.nodeId)));
+      reset(toReset, false);
       hooks.persist();
       log("info", `rerun: reset ${[...toReset].join(", ")}`);
       continue;
@@ -10041,6 +10241,17 @@ async function runGraph(ctx, dag, st, hooks) {
       hooks.persist();
       continue;
     }
+    if (hasLoops && st.executions + toRun.length > RUN_EXECUTION_BUDGET) {
+      const message = `loop budget exceeded: ${st.executions} node executions so far, ${toRun.length} more would pass the limit of ${RUN_EXECUTION_BUDGET}`;
+      for (const id of toRun) {
+        st.nodeStates[id] = "failed";
+        emit({ type: "node.state", runId, nodeId: id, state: "failed", at: ts() });
+      }
+      hooks.persist();
+      log("error", `${ctx.scope}${message}`);
+      return { status: "budget", message };
+    }
+    st.executions += toRun.length;
     for (const id of toRun) {
       const a = nodeAgentLabel(dag.nodes.get(id).def);
       const iter = (st.iterations[id] ?? 0) + 1;
@@ -10055,8 +10266,7 @@ async function runGraph(ctx, dag, st, hooks) {
     const wave = await Promise.allSettled(
       toRun.map((id) => {
         const iter = (st.iterations[id] ?? 0) + 1;
-        const prevOut = st.iterations[id] ? ctx.outputs.get(id) : void 0;
-        return runSingleNode(ctx, dag.nodes.get(id), iter, prevOut);
+        return runSingleNode(ctx, dag.nodes.get(id), iter, { previousOutput: ctx.outputs.get(id), feedback: st.loops[id] });
       })
     );
     for (const s of wave) {
@@ -10090,7 +10300,9 @@ async function runGraph(ctx, dag, st, hooks) {
         emit({ type: "node.output", runId, nodeId: r.nodeId, chunk, at: ts() });
         emit({ type: "node.state", runId, nodeId: r.nodeId, state: "done", ms: r.ms, iteration: iter, at: ts() });
         log("info", `node.state ${ctx.scope}${r.nodeId} done (${r.ms}ms, iter ${iter})`);
-        if (def.type === "branch" && def.branch_on) {
+        if (decideLoops(r.nodeId, r.output).length > 0) {
+          doneThisWave.splice(doneThisWave.indexOf(r.nodeId), 1);
+        } else if (def.type === "branch" && def.branch_on) {
           const value = extractJson(r.output)?.[def.branch_on];
           const routes = def.routes ?? [];
           const taken = pickBranchRoute(routes, value);
@@ -10161,7 +10373,15 @@ async function runWorkflow(client, directory, wf, opts = {}) {
     if (input !== void 0) fs2.writeFileSync(inputPath, input);
     else if (resumeRunId && fs2.existsSync(inputPath)) input = fs2.readFileSync(inputPath, "utf-8");
     const prior = resumeRunId ? loadCheckpoint(runDir) : null;
-    const st = prior ? { ...newGraphState(dag.order), nodeStates: prior.nodes, completedOrder: [...prior.completed], skippedOrder: [...prior.skipped ?? []], iterations: { ...prior.iterations ?? {} } } : newGraphState(dag.order);
+    const st = prior ? {
+      ...newGraphState(dag.order),
+      nodeStates: prior.nodes,
+      completedOrder: [...prior.completed],
+      skippedOrder: [...prior.skipped ?? []],
+      iterations: { ...prior.iterations ?? {} },
+      loops: { ...prior.loops ?? {} },
+      executions: prior.executions ?? 0
+    } : newGraphState(dag.order);
     const persist = () => saveCheckpoint(runDir, {
       runId,
       workflow: wf.introduction,
@@ -10169,6 +10389,8 @@ async function runWorkflow(client, directory, wf, opts = {}) {
       completed: st.completedOrder,
       skipped: st.skippedOrder,
       iterations: st.iterations,
+      ...Object.keys(st.loops).length ? { loops: st.loops } : {},
+      ...st.executions ? { executions: st.executions } : {},
       updatedAt: ts()
     });
     if (!prior) persist();
@@ -10235,6 +10457,10 @@ async function runWorkflow(client, directory, wf, opts = {}) {
       emitPanel({ type: "run.finished", runId, status: "error", at: ts() });
       return `Run ${runId} DEADLOCK: ${outcome.stuck} node(s) stuck — check for circular dependencies.`;
     }
+    if (outcome.status === "budget") {
+      emitPanel({ type: "run.finished", runId, status: "error", at: ts() });
+      return `Run ${runId} FAILED: ${outcome.message}. Lower the loops' max rounds or give them a condition that ends them.`;
+    }
     if (outcome.status === "failed") {
       emitPanel({ type: "run.finished", runId, status: "error", at: ts() });
       return `Run ${runId} FAILED at "${outcome.first.nodeId}" (${outcome.first.agent}): ${outcome.first.error}`;
@@ -10262,6 +10488,7 @@ async function runWorkflow(client, directory, wf, opts = {}) {
       ...st.schemaWarnings.length > 0 ? ["", "-- Schema warnings --", ...st.schemaWarnings.map((w) => `  ⚠ ${w}`)] : [],
       ...lint.length > 0 ? ["", "-- Workflow lint --", ...lint.map((issue) => `  ${issue.severity === "error" ? "✖" : "⚠"} ${issue.message}`)] : [],
       ...Object.values(st.iterations).some((v) => v > 1) ? ["", "-- Loop iterations --", ...Object.entries(st.iterations).filter(([, v]) => v > 1).map(([k, v]) => `  ${k}: ${v} iterations`)] : [],
+      ...st.loopNotes.length > 0 ? ["", "-- Loops --", ...st.loopNotes.map((note) => `  ↻ ${note}`)] : [],
       "",
       "-- Artifacts --",
       ...dag.order.filter((id) => completed.has(id)).map((id) => `  ${outputFileName(id)}  ${logFileName(id)}`),

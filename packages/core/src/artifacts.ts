@@ -32,7 +32,21 @@ export interface Checkpoint {
   skipped?: string[];
   /** Completed `trigger.loop` iterations per node id. */
   iterations?: Record<string, number>;
+  /** Per loop-back node: extra rounds started so far, and the last feedback text handed to it. */
+  loops?: Record<string, LoopCheckpoint>;
+  /** Node executions spent so far (the run-wide loop budget counts these). */
+  executions?: number;
   updatedAt: string;
+}
+
+/** Resume state of one loop-back edge, keyed by the node that carries `input.feedback`. */
+export interface LoopCheckpoint {
+  /** Node whose output fed back (`input.feedback.from`). */
+  from: string;
+  /** Extra rounds started, 1-based; the loop body is on round `round + 1`. */
+  round: number;
+  /** `from`'s output that started the current round — the next prompt's feedback, and the no-progress reference. */
+  text: string;
 }
 
 export const RUN_DIR_ROOT = '.agentry/runs';
