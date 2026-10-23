@@ -500,3 +500,99 @@ test("dispose closes the panel server and withdraws panel.json", async () => {
   assert.equal(fs.existsSync(path.join(dir, ".agentry", "panel.json")), false)
   await assert.rejects(request(port, { path: "/health" }))
 })
+
+/** An opencode 2 plugin context (the `@opencode/plugin` promise API). Each prompt plays one turn
+ *  of the agent loop into the session's transcript: an interim step, the reply, then the `idle`
+ *  record; `fail` ends the turn the way a provider error does instead. */
+function scriptedV2(directory, reply, { fail } = {}) {
+  const transcripts = new Map()
+  const created = []
+  const switched = []
+  const tools = []
+  let seq = 0
+  const record = (sessionID, message) => {
+    const entry = { id: `msg_${seq++}`, ...message }
+    transcripts.get(sessionID).push(entry)
+    return entry
+  }
+  return {
+    created,
+    switched,
+    tools,
+    transcripts,
+    location: { directory },
+    agent: { list: async () => ({ data: [{ id: "build" }, { id: "explore" }] }) },
+    session: {
+      create: async (input) => {
+        const id = `ses_${created.length}`
+        created.push({ id, ...input })
+        transcripts.set(id, [])
+        return { id }
+      },
+      get: async ({ sessionID }) => ({ id: sessionID, model: { id: "caller-model", providerID: "test" } }),
+      switchAgent: async (input) => { switched.push(input) },
+      prompt: async ({ sessionID, text }) => {
+        const sent = record(sessionID, { type: "user", text })
+        record(sessionID, { type: "assistant", content: [{ type: "text", text: "Looking into it." }] })
+        if (fail) {
+          record(sessionID, { type: "idle", outcome: "failed", error: { message: fail } })
+        } else {
+          const out = reply(text)
+          record(sessionID, { type: "assistant", content: [{ type: "text", text: typeof out === "string" ? out : JSON.stringify(out) }] })
+          record(sessionID, { type: "idle", outcome: "succeeded" })
+        }
+        return { id: sent.id }
+      },
+      wait: async () => {},
+      context: async ({ sessionID }) => transcripts.get(sessionID),
+    },
+    tool: {
+      transform: async (edit) => {
+        edit({ add: (tool) => tools.push(tool) })
+        return { dispose: async () => { tools.length = 0 } }
+      },
+    },
+  }
+}
+
+async function runV2(source, reply, options) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "agentry-test-"))
+  tempDirs.push(dir)
+  const file = path.join(dir, "wf.yaml")
+  fs.writeFileSync(file, JSON.stringify(source))
+  const ctx = scriptedV2(dir, reply, options)
+  const cleanup = await plugin.setup(ctx)
+  const { content } = await ctx.tools[0].execute({ workflow: file }, { sessionID: "ses_caller" })
+  return { dir, ctx, cleanup, content }
+}
+
+test("opencode 2: setup registers agentry_run; each node gets its own session on the caller's model, with its agent", async () => {
+  const { dir, ctx, cleanup, content } = await runV2(workflow({
+    a: agent("NODE=a"),
+    b: agent("NODE=b", { input: { from: "a" }, agent_mapping: { opencode: "explore" } }),
+  }), (text) => `${tag(text)} says hi`)
+
+  assert.match(content, /WORKFLOW RUN COMPLETE/)
+  const [run, ...nodes] = ctx.created
+  assert.equal(nodes.length, 2)
+  assert.ok(nodes.every((s) => s.parentID === run.id && s.model.id === "caller-model" && s.location.directory === dir))
+  assert.deepEqual(ctx.switched.map((s) => s.agent), ["build", "explore"])
+  // the reply is the turn's last assistant text, not an interim step
+  const runDir = path.join(dir, ".agentry", "runs", /Run ID\s*:\s*(\S+)/.exec(content)[1])
+  assert.equal(JSON.parse(fs.readFileSync(path.join(runDir, "a.output.json"), "utf8")).result, "a says hi")
+  const bPrompt = [...ctx.transcripts.values()].flat().find((m) => m.type === "user" && /NODE=b/.test(m.text)).text
+  assert.match(bPrompt, /a says hi/)
+  assert.doesNotMatch(bPrompt, /Looking into it/)
+  // opencode 2 gives plugins no log: progress lands in the project's .agentry/agentry.log
+  assert.match(fs.readFileSync(path.join(dir, ".agentry", "agentry.log"), "utf8"), /\[agentry\] run\.started/)
+
+  await cleanup()
+  assert.equal(ctx.tools.length, 0)
+  assert.equal(fs.existsSync(path.join(dir, ".agentry", "panel.json")), false)
+})
+
+test("opencode 2: a turn the provider fails fails its node with the provider's message", async () => {
+  const { cleanup, content } = await runV2(workflow({ a: agent("NODE=a") }), () => "unused", { fail: "OAuth access token has expired" })
+  assert.match(content, /FAILED at "a" \(build\): OAuth access token has expired/)
+  await cleanup()
+})

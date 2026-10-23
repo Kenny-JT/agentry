@@ -60,7 +60,7 @@ The Gmail and Google Calendar helper tools used in these clips are not part of t
 
 ## Quick start
 
-1. Install [opencode](https://opencode.ai). Agentry is tested on opencode 1.18.34 and 1.17.20.
+1. Install [opencode](https://opencode.ai). Agentry is tested on opencode 2.1.2, 1.18.34 and 1.17.20.
 2. Add the plugin to your project. It is a single file:
 
    ```sh

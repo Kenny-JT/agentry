@@ -60,7 +60,7 @@ https://github.com/user-attachments/assets/0ca33f9b-70fd-4dce-b958-42e703f32c6f
 
 ## 快速开始
 
-1. 安装 [opencode](https://opencode.ai)。已在 opencode 1.18.34 和 1.17.20 上测试。
+1. 安装 [opencode](https://opencode.ai)。已在 opencode 2.1.2、1.18.34 和 1.17.20 上测试。
 2. 把插件放进你的项目，它只有一个文件：
 
    ```sh
