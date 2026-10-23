@@ -3,6 +3,7 @@ import { useMemo, useRef } from 'react';
 import type { PointerEvent as ReactPointerEvent } from 'react';
 import type { AgentType } from '@agentry/core';
 import type { AgentFlowNode } from './types';
+import { isRouterType } from './graph';
 import { useRoutedEdgePoints } from './routing';
 import { orthogonalPath } from './backEdge';
 import { branchLead, FORK_EXTENSION, forkPoints, inForkTail } from './fork';
@@ -33,6 +34,7 @@ const MINI_TYPE_CLASS: Record<AgentType, string> = {
   documenter: 'is-type-documenter',
   'sub-workflow': 'is-type-subworkflow',
   tool: 'is-type-tool',
+  decision: 'is-type-decision',
   'workflow-input': 'is-type-input',
   'workflow-output': 'is-type-output',
 };
@@ -67,7 +69,7 @@ function miniNodeShape(type: AgentType | undefined, bx: number, by: number, bw: 
     const p = Math.min(20, bw * 0.22);
     return <path className={className} d={`M ${bx + p} ${by} L ${bx + bw} ${by} L ${bx + bw} ${by + bh} L ${bx + p} ${by + bh} L ${bx} ${by + bh / 2} Z`} />;
   }
-  if (type === 'tool') {
+  if (type === 'tool' || type === 'decision') {
     return <rect className={className} x={bx} y={by} width={bw} height={bh} rx={4} ry={4} />;
   }
   return <rect className={className} x={bx} y={by} width={bw} height={bh} rx={16} ry={16} />;
@@ -229,7 +231,7 @@ export function WorkflowMiniMap() {
               // Mirror the canvas: a branch's out-edge hand-draws the fork + parallel
               // condition buffer (branchLead) up to the engine pin, then the routed C.
               const wp =
-                typeById.get(edge.source) === 'branch'
+                isRouterType(typeById.get(edge.source))
                   ? [
                       ...branchLead(trunks.sourceTrunkX, trunks.sourceCenterY, first),
                       ...pts,

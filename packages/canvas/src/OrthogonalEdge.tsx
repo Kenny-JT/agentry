@@ -1,5 +1,6 @@
 import { BaseEdge, EdgeLabelRenderer, useStore } from '@xyflow/react';
 import type { EdgeProps } from '@xyflow/react';
+import { isRouter } from '@agentry/core';
 import type { AgentType, RouteCondition } from '@agentry/core';
 import { useRoutedEdgeGeometry } from './routing';
 import { orthogonalPath } from './backEdge';
@@ -15,6 +16,7 @@ const TYPE_CLASS: Record<AgentType, string> = {
   documenter: 'is-type-documenter',
   'sub-workflow': 'is-type-subworkflow',
   tool: 'is-type-tool',
+  decision: 'is-type-decision',
   'workflow-input': 'is-type-input',
   'workflow-output': 'is-type-output',
 };
@@ -68,7 +70,7 @@ export function OrthogonalEdge({
   const routeWhen = useStore(
     (s): { branch: boolean; when: RouteCondition | undefined; rank: number } => {
       const def = (s.nodeLookup.get(source)?.data as AgentNodeData | undefined)?.definition;
-      if (def?.type !== 'branch') return { branch: false, when: undefined, rank: 0 };
+      if (!def || !isRouter(def)) return { branch: false, when: undefined, rank: 0 };
       const whenOf = (to: string) => def.routes?.find((route) => route.to === to)?.when;
       const gated = orderedRouteTargets(
         def,

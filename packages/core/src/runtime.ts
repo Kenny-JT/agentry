@@ -11,6 +11,7 @@
  * Pure functions: no I/O, no DOM.
  */
 
+import { checkDecisionSpec, isBatchDecision } from './decision';
 import { checkToolSpec } from './tool';
 import type { AgentDefinition, BranchRoute, Condition, RouteCondition, Workflow } from './workflow';
 
@@ -27,6 +28,10 @@ export const isValidFeedbackMax = (max: unknown): max is number =>
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
+
+/** Nodes whose `branch_on` + `routes[]` pick one downstream port: a branch, or a single-mode decision that names `branch_on`. */
+export const isRouter = (def: Pick<AgentDefinition, 'type' | 'decision' | 'branch_on'>): boolean =>
+  def.type === 'branch' || (def.type === 'decision' && !isBatchDecision(def.decision) && Boolean(def.branch_on?.trim()));
 
 /** `trigger.when` / `loop.exit_when` against an upstream's raw output text — case-insensitive, AND-combined. */
 export function matchesCondition(output: string, cond: Condition): boolean {
@@ -72,7 +77,7 @@ export function pickBranchRoute(routes: readonly BranchRoute[], value: unknown):
 export function branchParents(workflow: Pick<Workflow, 'agents'>): Map<string, string[]> {
   const parents = new Map<string, string[]>();
   for (const [id, def] of Object.entries(workflow.agents)) {
-    if (def.type !== 'branch' || !def.routes) continue;
+    if (!isRouter(def) || !def.routes) continue;
     for (const route of def.routes) {
       const list = parents.get(route.to) ?? [];
       if (!list.includes(id)) list.push(id);
@@ -110,9 +115,10 @@ export function strictJsonNodes(workflow: Pick<Workflow, 'agents'>): Set<string>
     const select = def.input?.select;
     if (!isRecord(select)) continue;
     const sources = inputSources(def, parents.get(id) ?? []);
-    // a tool node's output is JSON by construction — nothing to force
+    // a tool or decision node's output is JSON by construction — nothing to force
     for (const upstream of Object.keys(select)) {
-      if (sources.includes(upstream) && workflow.agents[upstream]?.type !== 'tool') strict.add(upstream);
+      const upstreamType = workflow.agents[upstream]?.type;
+      if (sources.includes(upstream) && upstreamType !== 'tool' && upstreamType !== 'decision') strict.add(upstream);
     }
   }
   return strict;
@@ -228,8 +234,10 @@ export function checkRunnable(raw: unknown): RunnableCheck {
       errors.push(`agents.${id}: not an object`);
       continue;
     }
-    // sub-workflow nodes are containers and tool nodes run no model — neither has prompt/agent_mapping
+    // sub-workflow nodes are containers, tool nodes run no model and decision nodes only name a
+    // fallback agent — none of them has a prompt
     if (value.type === 'tool') errors.push(...checkToolSpec(id, value.tool));
+    else if (value.type === 'decision') errors.push(...checkDecisionSpec(id, value.decision, value.routes !== undefined));
     else if (value.type !== 'sub-workflow') {
       if (typeof value.prompt !== 'string') errors.push(`agents.${id}: missing prompt`);
       if (!isRecord(value.agent_mapping)) errors.push(`agents.${id}: missing agent_mapping`);
@@ -282,7 +290,7 @@ export function checkRunnable(raw: unknown): RunnableCheck {
       }
     }
 
-    if (value.type === 'branch' && value.routes !== undefined) {
+    if ((value.type === 'branch' || value.type === 'decision') && value.routes !== undefined) {
       if (!Array.isArray(value.routes)) errors.push(`agents.${id}.routes: expected a list`);
       else {
         value.routes.forEach((route: unknown, index: number) => {

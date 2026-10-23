@@ -14,8 +14,8 @@
  * branch deps — and derive everything from that.
  */
 
-import { activeTriggerKinds } from '@agentry/core';
-import type { AgentDefinition, AgentInput, BranchRoute, Workflow, WorkflowIO, WorkflowTriggers } from '@agentry/core';
+import { activeTriggerKinds, decisionOutputSchema, isRouter } from '@agentry/core';
+import type { AgentDefinition, AgentInput, AgentType, BranchRoute, Workflow, WorkflowIO, WorkflowTriggers } from '@agentry/core';
 import type { AgentFlowNode, WorkflowEdge } from './types';
 import { BRANCH_REAR } from './volume';
 
@@ -48,6 +48,10 @@ export interface LayoutOptions {
 }
 
 const DEFAULT_LAYOUT: LayoutOptions = { columnGap: 320, rowGap: 132, originX: 40, originY: 60 };
+
+/** Types that own `routes[]`: a branch, or a decision (a batch decision has none — see `isRouter` for the exact rule). */
+export const isRouterType = (type: AgentType | undefined): boolean => type === 'branch' || type === 'decision';
+export const isRouterDef = (def: AgentDefinition | undefined): boolean => (def ? isRouter(def) : false);
 
 export const edgeId = (source: string, target: string): string => `e-${source}-${target}`;
 
@@ -127,7 +131,7 @@ function edgesFromWorkflow(workflow: Workflow, ids: string[]): WorkflowEdge[] {
     for (const from of fromList(def.input?.from)) push(from, id);
     const loopFrom = def.input?.feedback?.from;
     if (loopFrom) push(loopFrom, id, true);
-    if (def.type === 'branch' && def.routes) {
+    if (isRouter(def) && def.routes) {
       for (const route of def.routes) push(id, route.to);
     }
   }
@@ -165,7 +169,7 @@ export function workflowToGraph(workflow: Workflow, layout: Partial<LayoutOption
   // engine pin → a non-avoiding route). Only branch columns pay the extra width.
   const branchDepths = new Set<number>();
   for (const id of ids) {
-    if (workflow.agents[id]?.type === 'branch') branchDepths.add(depthOf.get(id) ?? 0);
+    if (isRouterType(workflow.agents[id]?.type)) branchDepths.add(depthOf.get(id) ?? 0);
   }
   const colX = new Map<number, number>();
   let cursor = opts.originX;
@@ -246,7 +250,7 @@ export function graphToWorkflow(
   const loopFrom = new Map(edges.filter((edge) => loops.has(edge.id)).map((edge) => [edge.target, edge.source]));
   const order = topoOrder(nodes, forward);
   const byId = new Map(nodes.map((node) => [node.id, node]));
-  const isBranch = (id: string): boolean => byId.get(id)?.data.definition.type === 'branch';
+  const isBranch = (id: string): boolean => isRouterDef(byId.get(id)?.data.definition);
 
   // Fan-in sources per target, EXCLUDING edges out of a branch (those become the
   // branch's routes[], not the child's input.from).
@@ -274,17 +278,22 @@ export function graphToWorkflow(
     if (!node) continue;
     const def = node.data.definition;
     const input = mergeInput(def, sources.get(id), selectSources.get(id), loopFrom.get(id));
-    const branch = def.type === 'branch' ? branchFields(id, def, forward, byId) : undefined;
+    const branch = isRouter(def) ? branchFields(id, def, forward, byId) : undefined;
     const isSub = def.type === 'sub-workflow';
     const isTool = def.type === 'tool';
+    const isDecision = def.type === 'decision';
     agents[id] = {
       ...(def.introduction !== undefined ? { introduction: def.introduction } : {}),
       ...(def.type !== undefined ? { type: def.type } : {}),
       ...(input ? { input } : {}),
-      output: def.output,
+      // a decision's fields always follow from its questions
+      output: isDecision && def.decision ? { ...def.output, schema: decisionOutputSchema(def.decision) } : def.output,
       ...(def.tech_stack ? { tech_stack: def.tech_stack } : {}),
       ...(isTool && def.tool ? { tool: def.tool } : {}),
-      ...(isSub || isTool ? {} : { prompt: def.prompt ?? '', agent_mapping: def.agent_mapping ?? { opencode: 'build' } }),
+      ...(isDecision && def.decision ? { decision: def.decision } : {}),
+      // a decision has no prompt; its agent_mapping, when set, only names the fallback agent
+      ...(isDecision && def.agent_mapping ? { agent_mapping: def.agent_mapping } : {}),
+      ...(isSub || isTool || isDecision ? {} : { prompt: def.prompt ?? '', agent_mapping: def.agent_mapping ?? { opencode: 'build' } }),
       ...(def.trigger ? { trigger: def.trigger } : {}),
       ...(branch?.branch_on ? { branch_on: branch.branch_on } : {}),
       ...(branch?.routes ? { routes: branch.routes } : {}),
@@ -487,9 +496,10 @@ export function isJsonOut(
 ): boolean {
   const self = nodes.find((node) => node.id === nodeId);
   if (!self || isBoundaryId(nodeId)) return false;
-  if (self.data.definition.type === 'branch') return true;
-  // a tool's output is JSON by construction — nothing is enforced on it at run time
-  if (self.data.definition.type === 'tool') return false;
+  // a tool's or a decision's output is JSON by construction — nothing is enforced on it at run time
+  const type = self.data.definition.type;
+  if (type === 'tool' || type === 'decision') return false;
+  if (isRouter(self.data.definition)) return true;
   return edges.some(
     (edge) =>
       edge.source === nodeId &&

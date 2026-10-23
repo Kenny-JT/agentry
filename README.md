@@ -110,6 +110,7 @@ workflow: [find_bugs, check_security, summarize]
 | `input.feedback` | Loop back from a later step: while the output of `from` matches `when`, this step and every step up to `from` run again with that output as feedback, at most `max` extra rounds. A loop also ends when `from` says the same thing twice in a row, and a run with loops stops after 200 step runs. In the editor, draw the edge from the later step back to this one. |
 | `type: branch`, `branch_on`, `routes` | Read one field of the step's output and continue on the first route whose condition matches. |
 | `type: tool`, `tool` | A step that runs without a model; see [Tool steps](#tool-steps). |
+| `type: decision`, `decision` | A step that answers typed questions instead of writing text, and can route on the answers; see [Decision steps](#decision-steps). |
 | `on` | Start the workflow by itself: `file`, `schedule`, `web`, `mail` or `git`. |
 | `workflow` | Every step id, in display order. A step that is not listed does not run. |
 
@@ -142,6 +143,38 @@ A step with `type: tool` does its job without a model. Added to the example abov
 - A `command` written as a list runs without a shell, and each item may contain references. A `command` written as a string runs in the shell and is never filled in from upstream output; the script reads the run input and its upstream outputs as JSON on stdin instead. On Windows, `npm`, `pnpm` and `npx` need the string form.
 - Scripts run with your own user's permissions, like any script you start yourself.
 - An HTTP status outside 2xx or a non-zero exit code fails the step unless `allow_failure: true`. A timeout always fails it; the defaults are 30 s for HTTP and 120 s for scripts. `read_file` reads at most 2 MB; non-JSON HTTP bodies are cut at 256 KB and script output at 64 KB.
+
+### Decision steps
+
+A step with `type: decision` answers typed questions instead of writing text, and can pick the next step from its answers the way a branch does. Added to the examples above, this one decides whether the review is worth keeping, so `save_review` runs only when the answer is `save`:
+
+```yaml
+  triage:
+    type: decision
+    input: { from: summarize }
+    decision:
+      questions:
+        verdict:
+          type: choice
+          instructions: Is this review worth keeping?
+          options: { save: null, skip: "It found nothing that matters" }
+        security: { type: yes_no, instructions: The review reports a security problem. }
+      min_confidence: 0.6
+    branch_on: verdict
+    routes:
+      - { to: save_review, when: { equals: save } }
+```
+
+| Question `type` | Asks | Answer | Confidence field |
+|---|---|---|---|
+| `choice` | which of the `options` applies; each option is a name with an optional description | the option's name | `<name>_confidence` |
+| `yes_no` | whether the statement in `instructions` is true | `true` or `false` | `<name>_p`, the probability of `true` |
+| `score` | where it sits on `levels`: 2 to 10 descriptions, lowest first | the expected level: `0` is the first, and it may fall between two | `<name>_confidence` |
+
+- With `TYPESAFE_API_KEY` set, [Jev](https://docs.typesafe.ai) answers with calibrated probabilities (`model`, default `jev-latest`). Without a key, the step's `agent_mapping.opencode` agent (default `general`) is asked for the same probabilities as strict JSON. `AGENTRY_DECISION_BACKEND=jev` or `llm` picks one explicitly.
+- The output holds each answer with its confidence field, `unsure` (the questions answered with less confidence than `min_confidence`) and `backend`. The editor fills in this schema from the questions.
+- The questions are about the outputs of all upstream steps, keyed by step id. `state` replaces that with text of your own, using the same `{step_id.field}` references as tool steps.
+- `for_each` asks the same questions about every item of a JSON array, for example `"{find.items}"`. The output is then `items` (one record per item), `counts` (how many items got each answer) and `unsure` (the indices of items with an unsure answer). A batch decision does not route.
 
 ## Start workflows automatically
 

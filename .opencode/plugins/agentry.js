@@ -7628,6 +7628,7 @@ var FEEDBACK_DEFAULT_MAX = 3;
 var FEEDBACK_MAX_LIMIT = 10;
 var isValidFeedbackMax = (max) => typeof max === "number" && Number.isInteger(max) && max >= 1 && max <= FEEDBACK_MAX_LIMIT;
 var isRecord3 = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
+var isRouter = (def) => def.type === "branch" || def.type === "decision" && !isBatchDecision(def.decision) && Boolean(def.branch_on?.trim());
 function matchesCondition(output, cond) {
   const lower = output.toLowerCase().trim();
   if (cond.contains && !lower.includes(String(cond.contains).toLowerCase())) return false;
@@ -7654,7 +7655,7 @@ function pickBranchRoute(routes, value) {
 function branchParents(workflow) {
   const parents = /* @__PURE__ */ new Map();
   for (const [id, def] of Object.entries(workflow.agents)) {
-    if (def.type !== "branch" || !def.routes) continue;
+    if (!isRouter(def) || !def.routes) continue;
     for (const route of def.routes) {
       const list = parents.get(route.to) ?? [];
       if (!list.includes(id)) list.push(id);
@@ -7678,7 +7679,8 @@ function strictJsonNodes(workflow) {
     if (!isRecord3(select)) continue;
     const sources = inputSources(def, parents.get(id) ?? []);
     for (const upstream of Object.keys(select)) {
-      if (sources.includes(upstream) && workflow.agents[upstream]?.type !== "tool") strict.add(upstream);
+      const upstreamType = workflow.agents[upstream]?.type;
+      if (sources.includes(upstream) && upstreamType !== "tool" && upstreamType !== "decision") strict.add(upstream);
     }
   }
   return strict;
@@ -7752,6 +7754,7 @@ function checkRunnable(raw) {
       continue;
     }
     if (value.type === "tool") errors.push(...checkToolSpec(id, value.tool));
+    else if (value.type === "decision") errors.push(...checkDecisionSpec(id, value.decision, value.routes !== void 0));
     else if (value.type !== "sub-workflow") {
       if (typeof value.prompt !== "string") errors.push(`agents.${id}: missing prompt`);
       if (!isRecord3(value.agent_mapping)) errors.push(`agents.${id}: missing agent_mapping`);
@@ -7801,7 +7804,7 @@ function checkRunnable(raw) {
         else if (typeof loop.max !== "number" || loop.max < 1) errors.push(`agents.${id}.trigger.loop.max: required positive number`);
       }
     }
-    if (value.type === "branch" && value.routes !== void 0) {
+    if ((value.type === "branch" || value.type === "decision") && value.routes !== void 0) {
       if (!Array.isArray(value.routes)) errors.push(`agents.${id}.routes: expected a list`);
       else {
         value.routes.forEach((route, index) => {
@@ -7819,6 +7822,123 @@ function checkRunnable(raw) {
     }
   }
   return errors.length ? { ok: false, errors } : { ok: true, workflow: raw };
+}
+
+// ../core/src/decision.ts
+var DECISION_QUESTION_TYPES = ["choice", "yes_no", "score"];
+var DECISION_DEFAULT_MODEL = "jev-latest";
+var SCORE_LEVELS_MIN = 2;
+var SCORE_LEVELS_MAX = 10;
+var RESERVED_NAMES = ["unsure", "backend", "items", "counts", "index"];
+var NAME_RE = /^[A-Za-z_]\w*$/;
+var isRecord4 = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
+var isText = (value) => typeof value === "string" && value.trim().length > 0;
+function checkQuestion(at, name, raw, errors) {
+  if (!NAME_RE.test(name) || RESERVED_NAMES.includes(name)) {
+    errors.push(`${at}: question name must be an identifier and not one of ${RESERVED_NAMES.join(", ")}`);
+  }
+  if (!isRecord4(raw)) {
+    errors.push(`${at}: expected an object`);
+    return;
+  }
+  const type = raw.type;
+  if (typeof type !== "string" || !DECISION_QUESTION_TYPES.includes(type)) {
+    errors.push(`${at}.type: expected one of ${DECISION_QUESTION_TYPES.join(", ")}, got ${JSON.stringify(type)}`);
+    return;
+  }
+  if (!isText(raw.instructions)) errors.push(`${at}.instructions: required string`);
+  switch (type) {
+    case "choice": {
+      const options = raw.options;
+      if (!isRecord4(options) || Object.keys(options).length < 2) errors.push(`${at}.options: expected an object with at least two options`);
+      else if (Object.values(options).some((v) => v !== null && typeof v !== "string")) errors.push(`${at}.options: descriptions must be strings or null`);
+      break;
+    }
+    case "score": {
+      const levels = raw.levels;
+      if (!Array.isArray(levels) || levels.length < SCORE_LEVELS_MIN || levels.length > SCORE_LEVELS_MAX || !levels.every(isText)) {
+        errors.push(`${at}.levels: expected ${SCORE_LEVELS_MIN}..${SCORE_LEVELS_MAX} level descriptions`);
+      }
+      break;
+    }
+    case "yes_no":
+      break;
+  }
+}
+function checkDecisionSpec(id, raw, hasRoutes = false) {
+  const at = `agents.${id}.decision`;
+  if (!isRecord4(raw)) return [`${at}: required object for a decision node`];
+  const errors = [];
+  const questions = raw.questions;
+  if (!isRecord4(questions) || Object.keys(questions).length === 0) errors.push(`${at}.questions: required non-empty object`);
+  else for (const [name, question] of Object.entries(questions)) checkQuestion(`${at}.questions.${name}`, name, question, errors);
+  if (raw.model !== void 0 && !isText(raw.model)) errors.push(`${at}.model: expected a string`);
+  if (raw.state !== void 0 && typeof raw.state !== "string") errors.push(`${at}.state: expected a string`);
+  if (raw.for_each !== void 0 && !isText(raw.for_each)) errors.push(`${at}.for_each: expected a template string`);
+  const min = raw.min_confidence;
+  if (min !== void 0 && (typeof min !== "number" || !(min >= 0 && min <= 1))) errors.push(`${at}.min_confidence: expected a number between 0 and 1`);
+  if (hasRoutes && raw.for_each !== void 0) errors.push(`${at}.for_each: a batch decision cannot route (remove routes or for_each)`);
+  return errors;
+}
+var isBatchDecision = (spec) => isText(spec?.for_each);
+var confidenceField = (name, question) => question.type === "yes_no" ? `${name}_p` : `${name}_confidence`;
+function decisionOutputSchema(spec) {
+  if (isBatchDecision(spec)) return { items: "object[]", counts: "object", unsure: "number[]", backend: "string" };
+  const schema = {};
+  for (const [name, question] of Object.entries(spec.questions)) {
+    schema[name] = question.type === "choice" ? "string" : question.type === "yes_no" ? "boolean" : "number";
+    schema[confidenceField(name, question)] = "number";
+  }
+  schema.unsure = "string[]";
+  schema.backend = "string";
+  return schema;
+}
+var decisionAgentLabel = (backend) => `decision:${backend}`;
+function toJevQuestions(spec) {
+  const out = {};
+  for (const [name, q] of Object.entries(spec.questions)) {
+    switch (q.type) {
+      case "choice":
+        out[name] = { type: "choice", instructions: q.instructions, criteria: q.options };
+        break;
+      case "score":
+        out[name] = { type: "score", instructions: q.instructions, criteria: q.levels };
+        break;
+      case "yes_no":
+        out[name] = { type: "noul", instructions: q.instructions };
+        break;
+    }
+  }
+  return out;
+}
+var parseJsonText = (text) => {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return extractJson(text) ?? text;
+  }
+};
+function decisionStates(spec, scope) {
+  const notices = [];
+  if (isText(spec.for_each)) {
+    const rendered = renderTemplate(spec.for_each, scope);
+    notices.push(...rendered.notices);
+    const list = parseJsonText(rendered.text);
+    if (!Array.isArray(list)) throw new Error(`decision.for_each must resolve to a JSON array, got ${typeof list === "string" ? "text" : typeof list}`);
+    return { states: list, notices };
+  }
+  if (typeof spec.state === "string") {
+    const rendered = renderTemplate(spec.state, scope);
+    notices.push(...rendered.notices);
+    return { states: [parseJsonText(rendered.text)], notices };
+  }
+  const upstream = {};
+  for (const id of scope.sources) {
+    const text = scope.outputs.get(id);
+    if (text !== void 0) upstream[id] = parseJsonText(text);
+  }
+  if (Object.keys(upstream).length === 0) return { states: [scope.input === void 0 ? {} : parseJsonText(scope.input)], notices };
+  return { states: [upstream], notices };
 }
 
 // ../core/src/loops.ts
@@ -7938,12 +8058,42 @@ function feedbackIssues(id, workflow) {
   }
   return issues;
 }
+function decisionIssues(id, def, sources) {
+  const issues = [];
+  if (!def.decision) {
+    issues.push({ severity: "error", code: "decision-missing", nodeId: id, field: "decision", message: `"${id}" is a decision node but has no decision block.` });
+    return issues;
+  }
+  for (const message of checkDecisionSpec(id, def.decision, def.routes !== void 0)) {
+    issues.push({ severity: "error", code: "decision-invalid", nodeId: id, field: "decision", message });
+  }
+  if (issues.length) return issues;
+  const templated = [{ field: "state", text: def.decision.state }, { field: "for_each", text: def.decision.for_each }];
+  for (const { field, text } of templated) {
+    if (text === void 0) continue;
+    for (const ref of templateRefs(text)) {
+      if (ref.root === "input" || sources.includes(ref.root)) continue;
+      issues.push({
+        severity: "warning",
+        code: "template-unknown-source",
+        nodeId: id,
+        field,
+        message: `"${id}" references ${ref.raw} in decision.${field}, but "${ref.root}" is not an upstream of this node (nor "input") — it is left as written.`
+      });
+    }
+  }
+  return issues;
+}
 function validateWorkflow(workflow) {
   const issues = [];
   const agents = workflow.agents ?? {};
   const ids = Object.keys(agents);
   const has = (id) => Boolean(agents[id]);
-  const fieldsOf = (id) => Object.keys(agents[id]?.output?.schema ?? {});
+  const fieldsOf = (id) => {
+    const def = agents[id];
+    if (def?.type === "decision" && def.decision) return Object.keys(decisionOutputSchema(def.decision));
+    return Object.keys(def?.output?.schema ?? {});
+  };
   const parents = branchParents({ agents });
   const consumed = /* @__PURE__ */ new Set();
   const fed = /* @__PURE__ */ new Set();
@@ -7960,6 +8110,7 @@ function validateWorkflow(workflow) {
     const def = agents[id];
     if (!def) continue;
     if (def.type === "tool") issues.push(...toolIssues(id, def, inputSources(def, parents.get(id) ?? [])));
+    if (def.type === "decision") issues.push(...decisionIssues(id, def, inputSources(def, parents.get(id) ?? [])));
     const feedback = feedbackIssues(id, { agents });
     issues.push(...feedback);
     if (def.input?.feedback && !feedback.some((issue) => issue.severity === "error")) {
@@ -7980,7 +8131,7 @@ function validateWorkflow(workflow) {
         });
       }
     }
-    if (def.type === "branch" && def.routes) {
+    if (isRouter(def) && def.routes) {
       let feeds = false;
       for (const route of def.routes) {
         if (has(route.to)) {
@@ -8149,6 +8300,164 @@ function validateWorkflow(workflow) {
     }
   }
   return issues;
+}
+
+// ../core/src/decisionAnswers.ts
+var isRecord5 = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
+var clamp01 = (x) => Math.max(0, Math.min(1, x));
+var round3 = (x) => Math.round(x * 1e3) / 1e3;
+function choiceConfidence(probabilities) {
+  const n = probabilities.length;
+  if (n < 2) return 1;
+  return clamp01((Math.max(...probabilities) - 1 / n) / (1 - 1 / n));
+}
+function scoreConfidence(probabilities) {
+  const n = probabilities.length;
+  if (n < 2) return 1;
+  const m = probabilities.indexOf(Math.max(...probabilities));
+  const spread = probabilities.reduce((sum, p, i) => sum + p * Math.abs(i - m), 0);
+  const even = probabilities.reduce((sum, _, i) => sum + Math.abs(i - (n - 1) / 2), 0) / n;
+  return clamp01(1 - spread / even);
+}
+var yesNoConfidence = (p) => clamp01(Math.abs(2 * p - 1));
+var answerConfidence = (answer) => answer.type === "yes_no" ? yesNoConfidence(answer.p) : answer.confidence;
+function normalize(weights) {
+  const safe = weights.map((w) => Number.isFinite(w) && w > 0 ? w : 0);
+  const total = safe.reduce((a, b) => a + b, 0);
+  return total > 0 ? safe.map((w) => w / total) : safe.map(() => 1 / safe.length);
+}
+var argmax = (values) => values.indexOf(Math.max(...values));
+var expectedLevel = (probabilities) => round3(probabilities.reduce((sum, p, i) => sum + p * i, 0));
+function fromJevAnswers(spec, raw) {
+  if (!isRecord5(raw)) throw new Error("Jev response has no answers object");
+  const out = {};
+  for (const [name, q] of Object.entries(spec.questions)) {
+    const a = raw[name];
+    if (!isRecord5(a)) throw new Error(`Jev answered nothing for "${name}"`);
+    switch (q.type) {
+      case "choice": {
+        const given = a.probabilities;
+        if (typeof a.choice !== "string" || !isRecord5(given)) throw new Error(`Jev answer "${name}" is not a choice`);
+        const probabilities = Object.fromEntries(Object.keys(q.options).map((opt) => [opt, Number(given[opt] ?? 0)]));
+        const confidence = typeof a.confidence === "number" ? a.confidence : choiceConfidence(Object.values(probabilities));
+        out[name] = { type: "choice", choice: a.choice, probabilities, confidence };
+        break;
+      }
+      case "score": {
+        const given = a.probabilities;
+        if (typeof a.score !== "number" || !isRecord5(given)) throw new Error(`Jev answer "${name}" is not a score`);
+        const probabilities = q.levels.map((_, i) => Number(given[String(i)] ?? 0));
+        const confidence = typeof a.confidence === "number" ? a.confidence : scoreConfidence(probabilities);
+        out[name] = { type: "score", score: a.score, probabilities, confidence };
+        break;
+      }
+      case "yes_no": {
+        if (typeof a.noul !== "number") throw new Error(`Jev answer "${name}" is not a noul`);
+        out[name] = { type: "yes_no", p: clamp01(a.noul) };
+        break;
+      }
+    }
+  }
+  return out;
+}
+function describeQuestion(name, q) {
+  switch (q.type) {
+    case "choice": {
+      const options = Object.entries(q.options).map(([opt, desc]) => desc ? `"${opt}" (${desc})` : `"${opt}"`).join(", ");
+      return `- "${name}" (choice): ${q.instructions}
+  Answer: an object mapping EVERY option to its probability, summing to 1. Options: ${options}.`;
+    }
+    case "yes_no":
+      return `- "${name}" (yes/no): ${q.instructions}
+  Answer: the probability (0..1) that this statement is true.`;
+    case "score":
+      return `- "${name}" (score): ${q.instructions}
+  Answer: an array of ${q.levels.length} probabilities, one per level in order, summing to 1. Levels: ${q.levels.map((l, i) => `${i} = ${l}`).join("; ")}.`;
+  }
+}
+function decisionPrompt(spec, state) {
+  const stateText = typeof state === "string" ? state : JSON.stringify(state, null, 2);
+  return [
+    "You are a calibrated classifier. Judge the STATE below and answer every question with probabilities that reflect your actual uncertainty.",
+    "",
+    "STATE:",
+    stateText,
+    "",
+    "QUESTIONS:",
+    ...Object.entries(spec.questions).map(([name, q]) => describeQuestion(name, q)),
+    "",
+    `Respond with ONLY a raw JSON object whose keys are exactly: ${Object.keys(spec.questions).map((n) => `"${n}"`).join(", ")}. No prose, no code fences.`
+  ].join("\n");
+}
+function choiceFromLlm(q, value) {
+  const options = Object.keys(q.options);
+  let weights;
+  if (typeof value === "string") weights = options.map((opt) => opt.toLowerCase() === value.trim().toLowerCase() ? 1 : 0);
+  else if (isRecord5(value)) weights = options.map((opt) => Number(value[opt] ?? 0));
+  else return void 0;
+  if (!weights.some((w) => w > 0)) return void 0;
+  const probabilities = normalize(weights);
+  const choice = options[argmax(probabilities)] ?? options[0] ?? "";
+  return { type: "choice", choice, probabilities: Object.fromEntries(options.map((opt, i) => [opt, probabilities[i] ?? 0])), confidence: choiceConfidence(probabilities) };
+}
+function scoreFromLlm(q, value) {
+  let weights;
+  if (Array.isArray(value) && value.length === q.levels.length) weights = value.map(Number);
+  else if (typeof value === "number" && Number.isInteger(value) && value >= 0 && value < q.levels.length) weights = q.levels.map((_, i) => i === value ? 1 : 0);
+  else if (isRecord5(value)) weights = q.levels.map((level, i) => Number(value[String(i)] ?? value[level] ?? 0));
+  else return void 0;
+  if (!weights.some((w) => w > 0)) return void 0;
+  const probabilities = normalize(weights);
+  return { type: "score", score: expectedLevel(probabilities), probabilities, confidence: scoreConfidence(probabilities) };
+}
+function yesNoFromLlm(value) {
+  if (typeof value === "boolean") return { type: "yes_no", p: value ? 1 : 0 };
+  if (typeof value === "number" && Number.isFinite(value)) return { type: "yes_no", p: clamp01(value) };
+  if (isRecord5(value) && typeof value.p === "number") return { type: "yes_no", p: clamp01(value.p) };
+  return void 0;
+}
+function parseLlmAnswers(spec, text) {
+  const parsed = extractJson(text);
+  if (!parsed) throw new Error("fallback reply holds no JSON object");
+  const out = {};
+  for (const [name, q] of Object.entries(spec.questions)) {
+    const value = parsed[name];
+    const answer = q.type === "choice" ? choiceFromLlm(q, value) : q.type === "score" ? scoreFromLlm(q, value) : yesNoFromLlm(value);
+    if (!answer) throw new Error(`fallback reply has no usable answer for "${name}": ${JSON.stringify(value)}`);
+    out[name] = answer;
+  }
+  return out;
+}
+var answerValue = (answer) => answer.type === "choice" ? answer.choice : answer.type === "score" ? answer.score : answer.p >= 0.5;
+function decisionRecord(spec, answers) {
+  const record = {};
+  const unsure = [];
+  const threshold = spec.min_confidence ?? 0;
+  for (const [name, q] of Object.entries(spec.questions)) {
+    const answer = answers[name];
+    if (!answer) continue;
+    record[name] = answerValue(answer);
+    record[confidenceField(name, q)] = round3(answer.type === "yes_no" ? answer.p : answer.confidence);
+    if (answerConfidence(answer) < threshold) unsure.push(name);
+  }
+  return { ...record, unsure };
+}
+function batchRecord(spec, perItem) {
+  const counts = {};
+  for (const [name, q] of Object.entries(spec.questions)) if (q.type !== "score") counts[name] = {};
+  const unsure = [];
+  const items = perItem.map((answers, index) => {
+    const { unsure: itemUnsure, ...rest } = decisionRecord(spec, answers);
+    if (itemUnsure.length) unsure.push(index);
+    for (const name of Object.keys(counts)) {
+      const key = String(rest[name]);
+      const tally = counts[name] ?? {};
+      tally[key] = (tally[key] ?? 0) + 1;
+      counts[name] = tally;
+    }
+    return { index, ...rest };
+  });
+  return { items, counts, unsure };
 }
 
 // ../design/src/theme.ts
@@ -8367,6 +8676,7 @@ var PANEL_TOKENS_CSS = `:root {
   --agentry-color-type-output: #f778ba;
   --agentry-color-type-documenter: color-mix(in srgb, var(--agentry-color-type-reporter) 60%, var(--agentry-color-type-subworkflow));
   --agentry-color-type-tool: color-mix(in srgb, var(--agentry-color-type-straight) 45%, var(--agentry-color-text-secondary));
+  --agentry-color-type-decision: color-mix(in srgb, var(--agentry-color-type-branch) 55%, var(--agentry-color-text-secondary));
   --agentry-state-done: #3fb950;
   --agentry-state-running: #e3b341;
   --agentry-state-pending: #6e7681;
@@ -9063,6 +9373,108 @@ async function runTool(run) {
       return runWriteFile(spec, scope, projectDir);
     case "script":
       return runScript(run, spec);
+  }
+}
+
+// src/decision.ts
+var TYPESAFE_DEFAULT_URL = "https://api.typesafe.ai";
+var JEV_TIMEOUT_MS = 6e4;
+var JEV_ATTEMPTS = 3;
+var JEV_BACKOFF_MS = 500;
+var RETRY_STATUSES = /* @__PURE__ */ new Set([429, 529]);
+var JEV_CONCURRENCY = 4;
+var LLM_CONCURRENCY = 2;
+function pickBackend(env) {
+  const forced = env.AGENTRY_DECISION_BACKEND?.trim().toLowerCase();
+  if (forced === "llm") return "llm";
+  if (forced === "jev") return "jev";
+  return env.TYPESAFE_API_KEY?.trim() ? "jev" : "llm";
+}
+var DecisionError = class extends Error {
+  constructor(message, resolved = []) {
+    super(message);
+    this.resolved = resolved;
+    this.name = "DecisionError";
+  }
+};
+var sleep = (ms) => new Promise((resolve3) => setTimeout(resolve3, ms));
+async function mapLimited(items, limit, work) {
+  const results = new Array(items.length);
+  let next = 0;
+  const worker = async () => {
+    while (next < items.length) {
+      const index = next;
+      next += 1;
+      results[index] = await work(items[index], index);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return results;
+}
+function buildJevCall(req) {
+  const base = (req.env.TYPESAFE_BASE_URL?.trim() || TYPESAFE_DEFAULT_URL).replace(/\/+$/, "");
+  const model = req.spec.model?.trim() || DECISION_DEFAULT_MODEL;
+  const body = JSON.stringify({ state: req.state, model, questions: toJevQuestions(req.spec) });
+  return { url: `${base}/v1/systemone`, model, body };
+}
+async function askJev(req) {
+  const key = req.env.TYPESAFE_API_KEY?.trim();
+  if (!key) throw new DecisionError("TYPESAFE_API_KEY is not set (AGENTRY_DECISION_BACKEND=jev needs a key)");
+  const call = buildJevCall(req);
+  const resolved = [`POST ${call.url}`, `model: ${call.model}`, "", call.body];
+  const doFetch = req.fetchImpl ?? fetch;
+  const backoff = req.backoffMs ?? JEV_BACKOFF_MS;
+  for (let attempt = 1; ; attempt += 1) {
+    let response;
+    try {
+      response = await doFetch(call.url, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+        body: call.body,
+        signal: AbortSignal.timeout(JEV_TIMEOUT_MS)
+      });
+    } catch (err) {
+      const reason = err instanceof Error && err.name === "TimeoutError" ? `timed out after ${JEV_TIMEOUT_MS / 1e3} s` : err instanceof Error ? err.message : String(err);
+      throw new DecisionError(`POST ${call.url} failed: ${reason}`, resolved);
+    }
+    const text = await response.text();
+    if (RETRY_STATUSES.has(response.status) && attempt < JEV_ATTEMPTS) {
+      resolved.push(`→ ${response.status} (retry ${attempt}/${JEV_ATTEMPTS - 1})`);
+      await sleep(backoff * 2 ** (attempt - 1));
+      continue;
+    }
+    if (!response.ok) throw new DecisionError(`POST ${call.url} answered ${response.status}: ${text.slice(0, 500)}`, [...resolved, "", `→ ${response.status}`]);
+    let parsed;
+    try {
+      parsed = JSON.parse(text);
+    } catch {
+      throw new DecisionError(`POST ${call.url} answered non-JSON: ${text.slice(0, 200)}`, resolved);
+    }
+    const record = typeof parsed === "object" && parsed !== null ? parsed : {};
+    try {
+      const answers = fromJevAnswers(req.spec, record.answers);
+      const model = typeof record.model === "string" ? record.model : call.model;
+      return { answers, model, resolved: [...resolved, "", `→ ${response.status} ${model}`] };
+    } catch (err) {
+      throw new DecisionError(err instanceof Error ? err.message : String(err), [...resolved, "", text.slice(0, 2e3)]);
+    }
+  }
+}
+async function askLlm(spec, state, ask) {
+  const prompt = decisionPrompt(spec, state);
+  const first = await ask(prompt);
+  try {
+    return { answers: parseLlmAnswers(spec, first), resolved: ["## Prompt", prompt, "", "## Reply", first] };
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : String(err);
+    const second = await ask(`Your previous reply was not usable (${reason}). ${prompt.slice(prompt.lastIndexOf("Respond with ONLY"))}
+Your prior reply was:
+${first}`);
+    try {
+      return { answers: parseLlmAnswers(spec, second), resolved: ["## Prompt", prompt, "", "## Reply (first, unusable)", first, "", "## Reply", second] };
+    } catch (retryErr) {
+      throw new DecisionError(retryErr instanceof Error ? retryErr.message : String(retryErr), ["## Prompt", prompt, "", "## Reply", first, "", "## Reply (repair)", second]);
+    }
   }
 }
 
@@ -9829,13 +10241,14 @@ function documenterRecords(ctx, selfId) {
     if (r.warnings?.length) lines.push(`- Warnings: ${r.warnings.join("; ")}`);
     if (def?.prompt) lines.push(`- Instruction: ${clip(def.prompt.trim(), 600)}`);
     else if (def?.tool) lines.push(`- Tool: ${clip(JSON.stringify(def.tool), 600)}`);
+    else if (def?.decision) lines.push(`- Decision: ${clip(JSON.stringify(def.decision.questions), 600)}`);
     const output = ctx.outputs.get(r.nodeId);
     if (output) lines.push("- Output:", "```", clip(output.trim(), 3e3), "```");
     return lines.join("\n");
   }).join("\n\n");
 }
 var titleCase = (key) => key.replace(/[_-]+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
-var nodeAgentLabel = (def) => def.type === "tool" ? toolAgentLabel(def.tool) : def.agent_mapping?.opencode ?? "sub-workflow";
+var nodeAgentLabel = (def) => def.type === "tool" ? toolAgentLabel(def.tool) : def.type === "decision" ? decisionAgentLabel(pickBackend(process.env)) : def.agent_mapping?.opencode ?? "sub-workflow";
 function renderRunReport(ctx, docId, docOutput, schema) {
   const lines = [
     `# Run report — ${ctx.workflow.introduction}`,
@@ -10025,10 +10438,90 @@ async function runToolNode(ctx, dagNode, iter, feedback) {
     return err instanceof ToolError ? fail(err.message, err.resolved, err.notices) : fail(errorMessage2(err));
   }
 }
+var DECISION_FALLBACK_AGENT = "general";
+async function runDecisionNode(ctx, dagNode, iter, feedback) {
+  const { id: nodeId, def } = dagNode;
+  const backend = pickBackend(process.env);
+  const agent = decisionAgentLabel(backend);
+  const t0 = Date.now();
+  const iterLabel = iter > 1 ? ` (iter ${iter})` : "";
+  const fail = (error, resolved2 = []) => {
+    const ms = Date.now() - t0;
+    fs2.writeFileSync(
+      path2.join(ctx.runDir, logFileName(nodeId)),
+      [`# ${nodeId}${iterLabel}`, `- **Agent**: ${agent}`, `- **Elapsed**: ${ms} ms`, `- **Result**: FAILED — ${error}`, "", "## Resolved", "```", ...resolved2, "```"].join("\n")
+    );
+    return { nodeId, agent, output: "", ms, schemaWarnings: [], notices: [], iteration: iter, error };
+  };
+  const spec = def.decision;
+  if (!spec) return fail("decision node has no decision block");
+  let states;
+  let notices;
+  try {
+    const sources = feedback ? [...dagNode.sources, feedback.from] : dagNode.sources;
+    const outputs = feedback ? new Map([...ctx.outputs, [feedback.from, feedback.text]]) : ctx.outputs;
+    ({ states, notices } = decisionStates(spec, { sources, outputs, input: ctx.inbound }));
+  } catch (err) {
+    return fail(errorMessage2(err));
+  }
+  for (const n of notices) log("warn", `decision ${ctx.scope}${nodeId}: ${n}`);
+  const resolved = [];
+  const askOne = async (state, index) => {
+    const head = states.length > 1 ? `### item ${index}` : "### state";
+    if (backend === "jev") {
+      const reply2 = await askJev({ spec, state, env: process.env });
+      resolved.push(head, ...reply2.resolved, "");
+      return reply2.answers;
+    }
+    const mapped = def.agent_mapping?.opencode?.trim() || DECISION_FALLBACK_AGENT;
+    const agentName = await resolveAgent(ctx.client, mapped);
+    const session = await ctx.client.session.create({
+      body: { title: `${ctx.scope}${nodeId}${states.length > 1 ? ` [${index}]` : ""}${iterLabel}`, parentID: ctx.sessionId }
+    });
+    const reply = await askLlm(spec, state, (prompt) => callAgent(ctx.client, session.data.id, agentName, prompt));
+    resolved.push(head, `agent: ${agentName}`, ...reply.resolved, "");
+    return reply.answers;
+  };
+  try {
+    const perState = await mapLimited(states, backend === "jev" ? JEV_CONCURRENCY : LLM_CONCURRENCY, askOne);
+    const record = isBatchDecision(spec) ? { ...batchRecord(spec, perState), backend } : { ...decisionRecord(spec, perState[0] ?? {}), backend };
+    const output = JSON.stringify(record);
+    const ms = Date.now() - t0;
+    fs2.writeFileSync(
+      path2.join(ctx.runDir, outputFileName(nodeId)),
+      JSON.stringify({ nodeId, agent, result: output, elapsed_ms: ms, iteration: iter, schemaWarnings: [] }, null, 2)
+    );
+    fs2.writeFileSync(
+      path2.join(ctx.runDir, logFileName(nodeId)),
+      [
+        `# ${nodeId}${iterLabel}`,
+        `- **Agent**: ${agent}`,
+        `- **Elapsed**: ${ms} ms`,
+        `- **Iteration**: ${iter}`,
+        `- **States**: ${states.length}`,
+        ...notices.length ? ["", "## Template notices", ...notices.map((n) => `- ${n}`)] : [],
+        "",
+        "## Questions",
+        "```json",
+        JSON.stringify(spec.questions, null, 2),
+        "```",
+        "",
+        "## Resolved",
+        ...resolved,
+        "## Output",
+        output
+      ].join("\n")
+    );
+    return { nodeId, agent, output, ms, schemaWarnings: [], notices: [], iteration: iter };
+  } catch (err) {
+    return err instanceof DecisionError ? fail(err.message, [...resolved, ...err.resolved]) : fail(errorMessage2(err), resolved);
+  }
+}
 async function runSingleNode(ctx, dagNode, iter, extras) {
   const { id: nodeId, def } = dagNode;
   if (def.type === "sub-workflow") return runSubWorkflow(ctx, dagNode, iter, extras.feedback);
   if (def.type === "tool") return runToolNode(ctx, dagNode, iter, extras.feedback);
+  if (def.type === "decision") return runDecisionNode(ctx, dagNode, iter, extras.feedback);
   const mapped = def.agent_mapping?.opencode ?? "";
   let agent;
   try {
@@ -10302,7 +10795,7 @@ async function runGraph(ctx, dag, st, hooks) {
         log("info", `node.state ${ctx.scope}${r.nodeId} done (${r.ms}ms, iter ${iter})`);
         if (decideLoops(r.nodeId, r.output).length > 0) {
           doneThisWave.splice(doneThisWave.indexOf(r.nodeId), 1);
-        } else if (def.type === "branch" && def.branch_on) {
+        } else if (isRouter(def) && def.branch_on) {
           const value = extractJson(r.output)?.[def.branch_on];
           const routes = def.routes ?? [];
           const taken = pickBranchRoute(routes, value);

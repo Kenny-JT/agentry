@@ -8,6 +8,7 @@
  * Source of truth for: the App (editor, export) and the plugin runner (parse).
  */
 
+import type { DecisionSpec } from './decision';
 import type { ToolSpec } from './tool';
 import type { WorkflowTriggers } from './triggers';
 
@@ -39,6 +40,14 @@ export type AgentType =
    * The runner dispatches on this type; `prompt` / `agent_mapping` are absent.
    */
   | 'tool'
+  /**
+   * Typed decision with NO text generation (PROVISIONAL, README "Decision
+   * steps"): the questions in {@link AgentDefinition.decision} are answered by
+   * Jev (TypeSafe's System One model) or, without a key, by an LLM through a
+   * strict-JSON prompt. May carry `branch_on` + `routes` and then routes exactly
+   * like a branch; `prompt` is absent, `agent_mapping` only names the fallback agent.
+   */
+  | 'decision'
   /**
    * Workflow-level Vivado I/O boundary ports (Phase-5, App-only editing vocab).
    * These are NOT executable agents and NEVER serialize into `agents{}`; the
@@ -232,10 +241,12 @@ export interface AgentDefinition {
   agent_mapping?: AgentMapping;
   /** What the step does, for type === 'tool' (required there; absent elsewhere). */
   tool?: ToolSpec;
+  /** The questions asked, for type === 'decision' (required there; absent elsewhere). */
+  decision?: DecisionSpec;
   trigger?: Trigger;
-  /** Output field whose value the branch routes on (only for type === 'branch'). */
+  /** Output field whose value the node routes on (type === 'branch', or a single-mode 'decision'). */
   branch_on?: string;
-  /** One entry per output port, in PRIORITY order — first match wins (only for type === 'branch'). */
+  /** One entry per output port, in PRIORITY order — first match wins (type === 'branch', or a single-mode 'decision'). */
   routes?: BranchRoute[];
 }
 

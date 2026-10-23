@@ -110,6 +110,7 @@ workflow: [find_bugs, check_security, summarize]
 | `input.feedback` | 从后面的步骤绕回来：只要 `from` 的输出满足 `when`，从这一步到 `from` 的所有步骤就带着这段输出作为反馈再跑一轮，最多再跑 `max` 轮。`from` 连续两轮说的一样也会停；带循环的一次运行最多执行 200 个步骤。在编辑器里，从后面的步骤往回连到这一步即可。 |
 | `type: branch`、`branch_on`、`routes` | 读取这一步输出里的一个字段，走第一条条件满足的路线。 |
 | `type: tool`、`tool` | 不经过模型的步骤，见下面的[工具步骤](#工具步骤)。 |
+| `type: decision`、`decision` | 回答带类型的问题而不写文字的步骤，还能按答案选路，见下面的[决策步骤](#决策步骤)。 |
 | `on` | 让 workflow 自己启动：`file`、`schedule`、`web`、`mail` 或 `git`。 |
 | `workflow` | 所有步骤的 id，也是显示顺序。没列进来的步骤不会运行。 |
 
@@ -142,6 +143,38 @@ workflow: [find_bugs, check_security, summarize]
 - 写成列表的 `command` 不经过 shell 直接运行，每一项都可以包含引用；写成字符串的 `command` 在 shell 里运行，并且永远不会被上游输出填充——脚本改从 stdin 读取 JSON 格式的运行输入和上游输出。在 Windows 上，`npm`、`pnpm`、`npx` 需要用字符串形式。
 - 脚本以你自己的用户权限运行，和你亲手启动的脚本一样。
 - HTTP 状态码不是 2xx、或脚本退出码不为 0 时，这一步失败，除非设了 `allow_failure: true`。超时一定失败，默认 HTTP 30 秒、脚本 120 秒。`read_file` 最多读 2 MB；非 JSON 的 HTTP 响应体在 256 KB 处截断，脚本输出在 64 KB 处截断。
+
+### 决策步骤
+
+`type: decision` 的步骤不写文字，而是回答带类型的问题，还能像分支那样按答案决定下一步。把下面这一步加到上面的例子里，它会判断这条审查意见值不值得保留，只有答案是 `save` 时 `save_review` 才会运行：
+
+```yaml
+  triage:
+    type: decision
+    input: { from: summarize }
+    decision:
+      questions:
+        verdict:
+          type: choice
+          instructions: Is this review worth keeping?
+          options: { save: null, skip: "It found nothing that matters" }
+        security: { type: yes_no, instructions: The review reports a security problem. }
+      min_confidence: 0.6
+    branch_on: verdict
+    routes:
+      - { to: save_review, when: { equals: save } }
+```
+
+| 问题 `type` | 问什么 | 答案 | 置信度字段 |
+|---|---|---|---|
+| `choice` | `options` 里哪一项成立；每个选项是一个名字，可以附一句说明 | 选项的名字 | `<name>_confidence` |
+| `yes_no` | `instructions` 里的陈述是否成立 | `true` 或 `false` | `<name>_p`，即 `true` 的概率 |
+| `score` | 落在 `levels` 的哪一级：2 到 10 条描述，从低到高 | 期望等级：`0` 是第一级，可能落在两级之间 | `<name>_confidence` |
+
+- 设置了 `TYPESAFE_API_KEY` 时，由 [Jev](https://docs.typesafe.ai) 给出校准过的概率（`model`，默认 `jev-latest`）。没有 key 时，改为请这一步的 `agent_mapping.opencode` agent（默认 `general`）以严格 JSON 给出同样的概率。`AGENTRY_DECISION_BACKEND=jev` 或 `llm` 可以指定用哪一个。
+- 输出包含每个答案和它的置信度字段、`unsure`（置信度低于 `min_confidence` 的问题）和 `backend`。编辑器会按问题自动填好这份 schema。
+- 问题默认针对所有上游步骤的输出（按步骤 id 分开）。`state` 可以换成你自己写的内容，引用写法和工具步骤相同，都是 `{step_id.field}`。
+- `for_each` 会对一个 JSON 数组的每一项问同样的问题，例如 `"{find.items}"`。这时输出是 `items`（每项一条记录）、`counts`（每种答案各有几项）和 `unsure`（答案不确定的项的下标）。批量决策不能用来选路。
 
 ## 让 workflow 自动启动
 

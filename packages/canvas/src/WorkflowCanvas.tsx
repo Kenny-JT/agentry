@@ -18,6 +18,7 @@ import type {
 } from '@xyflow/react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { DragEvent, MouseEvent as ReactMouseEvent, MutableRefObject } from 'react';
+import { isRouter } from '@agentry/core';
 import type { AgentType } from '@agentry/core';
 import { AgentNode } from './AgentNode';
 import { EdgePreview, WHOLE_OUTPUT_KEY } from './EdgePreview';
@@ -58,6 +59,7 @@ const TYPE_ACCENT: Record<AgentType, string> = {
   documenter: 'var(--agentry-color-type-documenter)',
   'sub-workflow': 'var(--agentry-color-type-subworkflow)',
   tool: 'var(--agentry-color-type-tool)',
+  decision: 'var(--agentry-color-type-decision)',
   'workflow-input': 'var(--agentry-color-type-input)',
   'workflow-output': 'var(--agentry-color-type-output)',
 };
@@ -211,7 +213,7 @@ function CanvasFlow({
       maxY = Math.max(maxY, node.position.y + h);
       centerX.set(node.id, node.position.x + w / 2);
       if (
-        node.data.definition.type === 'branch' &&
+        isRouter(node.data.definition) &&
         edges.some((edge) => edge.source === node.id)
       ) {
         hasBranchOut = true;

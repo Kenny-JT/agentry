@@ -43,6 +43,9 @@
   /* Tool nodes (no model): the straight blue damped toward the theme's secondary
      text, so a deterministic step reads quieter than an agent in every palette. */
   --agentry-color-type-tool: color-mix(in srgb, var(--agentry-color-type-straight) 45%, var(--agentry-color-text-secondary));
+  /* Decision nodes (typed answers, no text): the branch orange damped toward the
+     theme's secondary text — it routes like a branch, but quietly. */
+  --agentry-color-type-decision: color-mix(in srgb, var(--agentry-color-type-branch) 55%, var(--agentry-color-text-secondary));
 
   /* Unified node-state colors: done=green, running=amber, pending=gray, failed=red. */
   --agentry-state-done: #3fb950;
