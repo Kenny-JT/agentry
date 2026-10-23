@@ -56,6 +56,7 @@ The Gmail and Google Calendar helper tools used in these clips are not part of t
 - **Runtime.** The opencode plugin runs independent steps in parallel, writes each step's output and log under `.agentry/runs/`, resumes from the last checkpoint, opens a live panel in its own window, and can finish a run with a Markdown report of what every step did.
 - **Templates.** Starting points for common jobs (review your changes, fix a bug, add tests, research a question, draft release notes, triage GitHub issues, explain a codebase, turn notes into action items) open from the editor's Templates view. The files are in [`workflows/templates`](workflows/templates).
 - **Watch runs in the editor.** Point the editor at your project and a run lights up on the same canvas you drew it on.
+- **Ask for changes in the editor.** An AI chat beside the canvas asks your local opencode server to edit the workflow. Before anything changes you see the steps and connections it would add, remove or change, and any problems; after you apply it, one click undoes it. For opencode 2, start the server with `OPENCODE_SERVER_PASSWORD` set and `opencode serve --cors <the editor's address>`.
 - **Use it from other coding agents.** An MCP server lets Claude Code, Codex, Cursor and other MCP hosts list, check, edit, run and follow the workflows in a project.
 - **Triggers.** `agentry-watch` starts a workflow when files land in a folder, at a set time, when a web page or a Gmail inbox changes, or when you push to a git branch.
 

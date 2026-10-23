@@ -250,6 +250,45 @@ export function PanelRightIcon({ size = 16, className, filled = false }: PanelIc
   );
 }
 
+/** Speech bubble; `filled` tints it like the panel icons' solid pane when the chat is showing. */
+export function ChatIcon({ size = 16, className, filled = false }: PanelIconProps) {
+  return (
+    <svg {...base(size, className)}>
+      <path
+        d="M4 6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-6.5L7 19.5V16H6a2 2 0 0 1-2-2Z"
+        fill={filled ? 'currentColor' : 'none'}
+        fillOpacity={filled ? 0.3 : undefined}
+      />
+      <path d="M8 9h8M8 12.5h5" />
+    </svg>
+  );
+}
+
+export function StopIcon({ size = 14, className }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" className={className} aria-hidden>
+      <rect x="6" y="6" width="12" height="12" rx="2" />
+    </svg>
+  );
+}
+
+export function SendIcon({ size = 14, className }: IconProps) {
+  return (
+    <svg {...base(size, className)}>
+      <path d="M12 19V5M12 5l-6 6M12 5l6 6" />
+    </svg>
+  );
+}
+
+export function UndoIcon({ size = 14, className }: IconProps) {
+  return (
+    <svg {...base(size, className)}>
+      <path d="M4 10h10a5 5 0 0 1 0 10h-3" />
+      <path d="M8 6 4 10l4 4" />
+    </svg>
+  );
+}
+
 export function PanelRightCloseIcon({ size = 14, className }: IconProps) {
   return (
     <svg {...base(size, className)}>

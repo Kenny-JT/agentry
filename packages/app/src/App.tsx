@@ -24,10 +24,11 @@ import type {
   XYPosition,
 } from '@agentry/canvas';
 import { validateWorkflow, workflowFromYaml, workflowToYaml } from '@agentry/core';
-import type { AgentDefinition, AgentInput, WorkflowTriggers } from '@agentry/core';
+import type { AgentDefinition, AgentInput, Workflow, WorkflowTriggers } from '@agentry/core';
 import { getStoredTheme, getToggledTheme, setTheme } from '@agentry/design';
 import type { Theme } from '@agentry/design';
 import { ActivityBar } from './components/ActivityBar';
+import { AiChatPanel } from './components/AiChatPanel';
 import { ExportDialog } from './components/ExportDialog';
 import { SettingsPanel } from './components/SettingsPanel';
 import { Inspector } from './components/Inspector';
@@ -55,9 +56,15 @@ import { pruneSelectEntries } from './pruneSelect';
 import { renameDefinitionRefs } from './renameRefs';
 import { useRunEvents } from './useRunEvents';
 import type { WorkflowTemplate } from './templates';
+import { useAiChat } from './useAiChat';
+import { mergeNodePositions } from './aiProposal';
+import { readAiPanelOpen, readAiSettings, writeAiPanelOpen, writeAiSettings } from './aiSettings';
+import type { AiSettings } from './aiSettings';
 
 export type SidebarView = 'agents' | 'templates' | 'history';
 export type HistorySort = 'Name' | 'Created' | 'Edited';
+
+const CHAT_WIDTH = 340;
 
 const WORKFLOW_FILE = 'add-tests-and-refactor.workflow.yaml';
 
@@ -104,6 +111,8 @@ export function App() {
   const [inspectorWidth, setInspectorWidth] = useState(() => readInspectorWidth());
   const inspectorMode: InspectorMode = inspectorHidden ? 'hidden' : inspectorPlacement;
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [chatOpen, setChatOpen] = useState(() => readAiPanelOpen());
+  const [aiSettings, setAiSettings] = useState<AiSettings>(() => readAiSettings());
   const [mode, setMode] = useState<WorkflowCanvasMode>('edit');
   const [observing, setObserving] = useState(false);
   const [projectRoot, setProjectRoot] = useState<string>(() => getStoredProjectRoot());
@@ -169,6 +178,30 @@ export function App() {
   const issues = useMemo(() => validateWorkflow(workflow), [workflow]);
   const errorTotal = useMemo(() => issues.filter((issue) => issue.severity === 'error').length, [issues]);
   const warningTotal = issues.length - errorTotal;
+
+  useEffect(() => writeAiPanelOpen(chatOpen), [chatOpen]);
+  const onToggleChat = useCallback(() => setChatOpen((open) => !open), []);
+  const onChangeAiSettings = useCallback((next: AiSettings) => {
+    setAiSettings(next);
+    writeAiSettings(next);
+  }, []);
+  // Nodes that survive a proposal keep the spot the user gave them; the returned function restores the canvas.
+  const onApplyAiWorkflow = useCallback(
+    (next: Workflow) => {
+      const before = { meta, nodes, edges };
+      const graph = workflowToGraph(next);
+      setMeta(graph.meta);
+      setNodes(resolveVolumeOverlaps(mergeNodePositions(nodes, graph.nodes, graph.edges)));
+      setEdges(graph.edges);
+      return () => {
+        setMeta(before.meta);
+        setNodes(before.nodes);
+        setEdges(before.edges);
+      };
+    },
+    [meta, nodes, edges, setNodes, setEdges],
+  );
+  const chat = useAiChat({ settings: aiSettings, workflow, onApply: onApplyAiWorkflow });
 
   const onSelectView = useCallback(
     (next: SidebarView) => {
@@ -582,12 +615,14 @@ export function App() {
         onToggleSidebar={onToggleSidebar}
         inspectorVisible={!inspectorHidden}
         onToggleInspector={onToggleInspector}
+        chatOpen={chatOpen}
+        onToggleChat={onToggleChat}
       />
 
       <div
         className="agentry-body"
         style={{
-          gridTemplateColumns: `52px ${sidebarOpen ? '264px' : '0px'} minmax(0, 1fr) ${
+          gridTemplateColumns: `52px ${sidebarOpen ? '264px' : '0px'} minmax(0, 1fr) ${chatOpen ? `${CHAT_WIDTH}px` : '0px'} ${
             docked ? `${inspectorWidth}px` : '0px'
           }`,
         }}
@@ -641,6 +676,14 @@ export function App() {
             </button>
           )}
         </main>
+        {chatOpen && (
+          <AiChatPanel
+            chat={chat}
+            settings={aiSettings}
+            onChangeSettings={onChangeAiSettings}
+            onClose={() => setChatOpen(false)}
+          />
+        )}
         {docked && inspector}
       </div>
 
