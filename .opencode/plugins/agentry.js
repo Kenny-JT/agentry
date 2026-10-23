@@ -7623,6 +7623,7 @@ function toolTemplateFields(spec) {
 }
 
 // ../core/src/runtime.ts
+var RUNTIME_NAMES = ["opencode", "claude_code", "codex"];
 var fromList = (from) => from === void 0 ? [] : Array.isArray(from) ? from : [from];
 var FEEDBACK_DEFAULT_MAX = 3;
 var FEEDBACK_MAX_LIMIT = 10;
@@ -7758,7 +7759,12 @@ function checkRunnable(raw) {
     else if (value.type !== "sub-workflow") {
       if (typeof value.prompt !== "string") errors.push(`agents.${id}: missing prompt`);
       if (!isRecord3(value.agent_mapping)) errors.push(`agents.${id}: missing agent_mapping`);
-      else if (typeof value.agent_mapping.opencode !== "string") errors.push(`agents.${id}.agent_mapping: missing opencode`);
+      else {
+        for (const host2 of RUNTIME_NAMES) {
+          const name = value.agent_mapping[host2];
+          if (name !== void 0 && typeof name !== "string") errors.push(`agents.${id}.agent_mapping.${host2}: expected a string`);
+        }
+      }
     }
     const input = isRecord3(value.input) ? value.input : null;
     if (input?.from !== void 0) {
@@ -9492,6 +9498,8 @@ var ts = () => (/* @__PURE__ */ new Date()).toISOString();
 var errorMessage2 = (err) => err instanceof Error ? err.message : String(err);
 var fmtMs = (ms) => ms < 1e3 ? `${ms} ms` : `${(ms / 1e3).toFixed(1)} s`;
 var clip = (text, max) => text.length > max ? `${text.slice(0, max)}…` : text;
+var runtime = "opencode";
+var READ_ONLY_ROLES = /* @__PURE__ */ new Set(["explore", "plan"]);
 var host = null;
 function log(level, message) {
   void host?.app.log?.({ body: { service: "agentry", level, message: `[agentry] ${message}` } })?.catch(() => {
@@ -10248,7 +10256,8 @@ function documenterRecords(ctx, selfId) {
   }).join("\n\n");
 }
 var titleCase = (key) => key.replace(/[_-]+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
-var nodeAgentLabel = (def) => def.type === "tool" ? toolAgentLabel(def.tool) : def.type === "decision" ? decisionAgentLabel(pickBackend(process.env)) : def.agent_mapping?.opencode ?? "sub-workflow";
+var mappedAgent = (def) => def.agent_mapping?.[runtime] || void 0;
+var nodeAgentLabel = (def) => def.type === "tool" ? toolAgentLabel(def.tool) : def.type === "decision" ? decisionAgentLabel(pickBackend(process.env)) : def.type === "sub-workflow" ? "sub-workflow" : mappedAgent(def) ?? `${runtime} default`;
 function renderRunReport(ctx, docId, docOutput, schema) {
   const lines = [
     `# Run report — ${ctx.workflow.introduction}`,
@@ -10369,8 +10378,11 @@ async function runSubWorkflow(ctx, dagNode, iter, feedback) {
   );
   return { nodeId, agent: "sub-workflow", output, ms, schemaWarnings, notices, iteration: iter };
 }
-async function callAgent(client, sessionId, agent, text) {
-  const result = await client.session.prompt({ path: { id: sessionId }, body: { agent, parts: [{ type: "text", text }] } });
+async function callAgent(client, sessionId, agent, readOnly, text) {
+  const body = { parts: [{ type: "text", text }] };
+  if (agent) body.agent = agent;
+  if (runtime !== "opencode" && readOnly) body.readOnly = true;
+  const result = await client.session.prompt({ path: { id: sessionId }, body });
   return extractText(result.data?.parts ?? result.parts ?? []);
 }
 async function runToolNode(ctx, dagNode, iter, feedback) {
@@ -10473,13 +10485,12 @@ async function runDecisionNode(ctx, dagNode, iter, feedback) {
       resolved.push(head, ...reply2.resolved, "");
       return reply2.answers;
     }
-    const mapped = def.agent_mapping?.opencode?.trim() || DECISION_FALLBACK_AGENT;
-    const agentName = await resolveAgent(ctx.client, mapped);
+    const agentName = runtime === "opencode" ? await resolveAgent(ctx.client, def.agent_mapping?.opencode?.trim() || DECISION_FALLBACK_AGENT) : mappedAgent(def);
     const session = await ctx.client.session.create({
       body: { title: `${ctx.scope}${nodeId}${states.length > 1 ? ` [${index}]` : ""}${iterLabel}`, parentID: ctx.sessionId }
     });
-    const reply = await askLlm(spec, state, (prompt) => callAgent(ctx.client, session.data.id, agentName, prompt));
-    resolved.push(head, `agent: ${agentName}`, ...reply.resolved, "");
+    const reply = await askLlm(spec, state, (prompt) => callAgent(ctx.client, session.data.id, agentName, true, prompt));
+    resolved.push(head, `agent: ${agentName ?? `${runtime} default`}`, ...reply.resolved, "");
     return reply.answers;
   };
   try {
@@ -10517,18 +10528,36 @@ async function runDecisionNode(ctx, dagNode, iter, feedback) {
     return err instanceof DecisionError ? fail(err.message, [...resolved, ...err.resolved]) : fail(errorMessage2(err), resolved);
   }
 }
+function writeFailureLog(ctx, nodeId, iter, agent, ms, error, prompt) {
+  fs2.writeFileSync(
+    path2.join(ctx.runDir, logFileName(nodeId)),
+    [
+      `# ${nodeId}${iter > 1 ? ` (iter ${iter})` : ""}`,
+      `- **Agent**: ${agent}`,
+      `- **Elapsed**: ${ms} ms`,
+      `- **Result**: FAILED — ${error}`,
+      ...prompt ? ["", "## Prompt", "```", prompt, "```"] : []
+    ].join("\n")
+  );
+}
 async function runSingleNode(ctx, dagNode, iter, extras) {
   const { id: nodeId, def } = dagNode;
   if (def.type === "sub-workflow") return runSubWorkflow(ctx, dagNode, iter, extras.feedback);
   if (def.type === "tool") return runToolNode(ctx, dagNode, iter, extras.feedback);
   if (def.type === "decision") return runDecisionNode(ctx, dagNode, iter, extras.feedback);
-  const mapped = def.agent_mapping?.opencode ?? "";
-  let agent;
-  try {
-    agent = await resolveAgent(ctx.client, mapped);
-  } catch (err) {
-    return { nodeId, agent: mapped || "unknown", output: "", ms: 0, schemaWarnings: [], notices: [], iteration: iter, error: errorMessage2(err) };
+  const mapped = mappedAgent(def);
+  const agent = nodeAgentLabel(def);
+  if (!mapped) log("warn", `node ${ctx.scope}${nodeId}: agent_mapping has no "${runtime}" entry — running as the host's default agent`);
+  if (mapped && runtime === "opencode") {
+    try {
+      await resolveAgent(ctx.client, mapped);
+    } catch (err) {
+      const error = errorMessage2(err);
+      writeFailureLog(ctx, nodeId, iter, agent, 0, error);
+      return { nodeId, agent, output: "", ms: 0, schemaWarnings: [], notices: [], iteration: iter, error };
+    }
   }
+  const readOnly = READ_ONLY_ROLES.has(def.agent_mapping?.opencode ?? def.tech_stack?.agent ?? "");
   const built = buildPrompt(def, ctx.outputs, dagNode.branchParents, {
     ...extras,
     inbound: inboundFor(ctx, nodeId, def, dagNode.branchParents),
@@ -10545,13 +10574,14 @@ async function runSingleNode(ctx, dagNode, iter, extras) {
       body: { title: `${ctx.scope}${nodeId}${iter > 1 ? ` (iter ${iter})` : ""}`, parentID: ctx.sessionId }
     });
     const nodeSession = session.data.id;
-    let outputText = await callAgent(ctx.client, nodeSession, agent, prompt);
+    let outputText = await callAgent(ctx.client, nodeSession, mapped, readOnly, prompt);
     if (strictJson && !extractJson(outputText)) {
       try {
         outputText = await callAgent(
           ctx.client,
           nodeSession,
-          agent,
+          mapped,
+          readOnly,
           `Return ONLY a raw JSON object matching this schema: ${JSON.stringify(schema)}. No prose, no code fences. Your prior output was:
 ${outputText}`
         );
@@ -10587,7 +10617,10 @@ ${outputText}`
     );
     return { nodeId, agent, output: outputText, ms, schemaWarnings, notices, iteration: iter };
   } catch (err) {
-    return { nodeId, agent, output: "", ms: Date.now() - t0, schemaWarnings: [], notices, iteration: iter, error: errorMessage2(err) };
+    const error = errorMessage2(err);
+    const ms = Date.now() - t0;
+    writeFailureLog(ctx, nodeId, iter, agent, ms, error, prompt);
+    return { nodeId, agent, output: "", ms, schemaWarnings: [], notices, iteration: iter, error };
   }
 }
 function selectFallbackEvent(runId, nodeId, notice) {
@@ -11078,15 +11111,42 @@ function v2Client(ctx, model) {
     }
   };
 }
+function attachHost(input) {
+  const { client, directory } = input;
+  runtime = input.runtime ?? "opencode";
+  host = client;
+  runHost = { client, directory };
+  void startPanelServer(directory);
+}
+function createHostRunner(input) {
+  attachHost(input);
+  return {
+    start(file, opts = {}) {
+      const loaded = loadWorkflowFile(input.directory, file);
+      if (!loaded.ok) throw new Error(loaded.error);
+      if (runInProgress) throw new Error(`a run is already going (${lastRunId}) — wait for it or stop it first`);
+      const runId = opts.resumeRunId ?? `run_${Date.now()}`;
+      const finished = runWorkflow(input.client, input.directory, loaded.workflow, { runId, input: opts.input, resumeRunId: opts.resumeRunId });
+      finished.catch((err) => {
+        log("error", `run ${runId} failed: ${errorMessage2(err)}`);
+        emitPanel({ type: "run.finished", runId, status: "error", at: ts() });
+      });
+      return { runId, finished };
+    },
+    busy: () => runInProgress,
+    stop: () => {
+      abortFlag = true;
+    },
+    dispose: shutdownPanel
+  };
+}
 var agentry_default = {
   id: "agentry",
   // opencode 1
   server: async (input) => {
     const { client, directory } = input;
     const { tool } = await import("@opencode-ai/plugin");
-    host = client;
-    runHost = { client, directory };
-    void startPanelServer(directory);
+    attachHost(input);
     return {
       tool: {
         agentry_run: tool({
@@ -11109,9 +11169,7 @@ var agentry_default = {
   setup: async (ctx) => {
     const { directory } = ctx.location;
     const client = v2Client(ctx);
-    host = client;
-    runHost = { client, directory };
-    void startPanelServer(directory);
+    attachHost({ client, directory });
     const registration = await ctx.tool.transform((tools) => tools.add({
       name: "agentry_run",
       description: RUN_TOOL_DESCRIPTION,
@@ -11136,5 +11194,6 @@ var agentry_default = {
   }
 };
 export {
+  createHostRunner,
   agentry_default as default
 };

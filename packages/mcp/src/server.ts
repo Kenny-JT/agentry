@@ -1,5 +1,5 @@
 /** The MCP server: ten tools over one {@link Project} and its {@link Runs}. */
-import { McpServer, type CallToolResult } from '@modelcontextprotocol/server';
+import { CLIENT_INFO_META_KEY, McpServer, type CallToolResult } from '@modelcontextprotocol/server';
 import { applyOperations } from './edit';
 import { Project, ToolError, summarizeNodes } from './project';
 import type { Runs } from './runs';
@@ -11,14 +11,24 @@ const text = (data: unknown): CallToolResult => ({ content: [{ type: 'text', tex
 const failure = (message: string): CallToolResult => ({ isError: true, content: [{ type: 'text', text: message }] });
 
 /** Every tool answers; a refusal or a fault becomes an isError result the model can act on. */
-const guarded = <A>(run: (args: A) => Promise<unknown> | unknown) => async (args: A): Promise<CallToolResult> => {
+const guarded = <A, X>(run: (args: A, extra: X) => Promise<unknown> | unknown) => async (args: A, extra: X): Promise<CallToolResult> => {
   try {
-    return text(await run(args));
+    return text(await run(args, extra));
   } catch (err) {
     if (err instanceof ToolError) return failure(err.message);
     return failure(`agentry-mcp: ${err instanceof Error ? err.message : String(err)}`);
   }
 };
+
+/**
+ * Who is calling. A client on the 2026-07-28 protocol (Claude Code 2.1.3xx among them) sends no
+ * initialize and names itself in every request's envelope; an older client named itself once, in initialize.
+ */
+function clientNameOf(server: McpServer, extra: unknown): string | undefined {
+  const envelope = (extra as { mcpReq?: { envelope?: Record<string, unknown> } } | undefined)?.mcpReq?.envelope;
+  const info = envelope?.[CLIENT_INFO_META_KEY] as { name?: unknown } | undefined;
+  return typeof info?.name === 'string' ? info.name : server.server.getClientVersion()?.name;
+}
 
 export function createServer(project: Project, runs: Runs): McpServer {
   const server = new McpServer(SERVER_INFO, { capabilities: { tools: {} } });
@@ -70,18 +80,19 @@ export function createServer(project: Project, runs: Runs): McpServer {
 
   server.registerTool('run_workflow', {
     title: 'Run a workflow',
-    description: 'Start a run of workflows/<file> in this project through its opencode server (started when needed) and the Agentry plugin, and return its run_id at once — the run continues on its own. Follow it with get_run or wait_for_run; stop it with cancel_run. Needs opencode and the Agentry plugin (.opencode/plugins/agentry.js) in the project.',
+    description: 'Start a run of workflows/<file> in this project and return its run_id at once — the run continues on its own. Follow it with get_run or wait_for_run; stop it with cancel_run. runtime picks who runs the steps: opencode (through its server, started when needed, and the Agentry plugin in .opencode/plugins/agentry.js), claude (a headless `claude -p` per step, inside this server) or codex (a `codex exec` per step). Default: AGENTRY_RUNTIME, else opencode when the project has the plugin, else the host you are calling from (Claude Code -> claude, Codex -> codex), else opencode.',
     inputSchema: toolInputs.run_workflow,
-  }, guarded(async ({ file, input }) => {
+  }, guarded(async ({ file, input, runtime }, extra) => {
     const rel = project.relativeFile(file);
     const { errors, issues } = project.check(rel, undefined);
     if (errors) throw new ToolError(`${rel} has ${errors} validation error(s); the runner would refuse it:\n${issues.filter((i) => i.severity === 'error').map((i) => `- ${i.message}`).join('\n')}`);
-    return { file: rel, ...(await runs.start(rel, input)) };
+    runs.clientName = clientNameOf(server, extra);
+    return { file: rel, ...(await runs.start(rel, input, runtime)) };
   }));
 
   server.registerTool('get_run', {
     title: 'Get a run',
-    description: 'State of one run (default: the latest): status (running | done | failed | cancelled), every node with its state, agent, iteration, duration and a short output preview, and the run report when the documenter wrote one. Live state comes from the panel while the run is going, the run directory afterwards.',
+    description: 'State of one run (default: the latest): status (running | done | failed | cancelled), every node with its state, agent, iteration, duration and a short output preview (or why it failed), and the run report when the documenter wrote one. Live state comes from the panel while the run is going, the run directory afterwards.',
     inputSchema: toolInputs.get_run,
     annotations: { readOnlyHint: true },
   }, guarded(({ run_id }) => runs.get(run_id)));

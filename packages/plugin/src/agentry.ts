@@ -34,11 +34,13 @@ import {
   toolAgentLabel,
   validateWorkflow as lintWorkflow,
 } from "@agentry/core"
-import type { AgentDefinition, Checkpoint, Condition, DecisionAnswers, LoopCheckpoint, NodeState, SelectFallback, Workflow, WorkflowEvent } from "@agentry/core"
+import type { AgentDefinition, Checkpoint, Condition, DecisionAnswers, LoopCheckpoint, NodeState, RuntimeName, SelectFallback, Workflow, WorkflowEvent } from "@agentry/core"
 import { THEMES } from "@agentry/design"
 import { PANEL_TOKENS_CSS } from "./panelTokens"
 import { runTool, ToolError } from "./tools"
 import { askJev, askLlm, DecisionError, JEV_CONCURRENCY, LLM_CONCURRENCY, mapLimited, pickBackend } from "./decision"
+
+export type { RuntimeName }
 
 const PANEL_FILE = ".agentry/panel.json" // App-side discovery file
 const REPORT_FILE = "log.md" // whole-run report the documenter writes beside the node artifacts (D19)
@@ -66,7 +68,7 @@ const clip = (text: string, max: number) => (text.length > max ? `${text.slice(0
 // The slice of the opencode SDK client the runner uses. Structural on purpose: the host
 // passes its real client, and the runner stays independent of SDK type churn.
 interface PromptResult { data?: { parts?: unknown[] }; parts?: unknown[] }
-interface OpencodeClient {
+export interface OpencodeClient {
   app: {
     agents(): Promise<{ data?: Array<{ name: string }> }>
     log?(options: { body: { service: string; level: LogLevel; message: string } }): Promise<unknown>
@@ -77,7 +79,13 @@ interface OpencodeClient {
   }
 }
 
-type LogLevel = "debug" | "info" | "warn" | "error"
+export type LogLevel = "debug" | "info" | "warn" | "error"
+
+// Which host executes the model nodes: opencode's own agents through the SDK client, or a
+// headless CLI behind a host adapter (./hosts.ts) that speaks the same client interface.
+let runtime: RuntimeName = "opencode"
+// Roles that only read the project: on a CLI host they run in its read-only mode.
+const READ_ONLY_ROLES: ReadonlySet<string> = new Set(["explore", "plan"])
 
 // Progress and errors go to the host's log, never to stdout/stderr: the TUI owns the terminal
 // and plugin output there tears through its rendering. opencode 1 keeps them in opencode.log
@@ -943,10 +951,13 @@ function documenterRecords(ctx: RunCtx, selfId: string): string {
 
 const titleCase = (key: string) => key.replace(/[_-]+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())
 
+const mappedAgent = (def: AgentDefinition): string | undefined => def.agent_mapping?.[runtime] || undefined
+
 const nodeAgentLabel = (def: AgentDefinition): string =>
   def.type === "tool" ? toolAgentLabel(def.tool)
     : def.type === "decision" ? decisionAgentLabel(pickBackend(process.env))
-    : def.agent_mapping?.opencode ?? "sub-workflow"
+    : def.type === "sub-workflow" ? "sub-workflow"
+    : mappedAgent(def) ?? `${runtime} default`
 
 /** The whole-run report: a deterministic step table + the documenter's narrative (D19). */
 function renderRunReport(ctx: RunCtx, docId: string, docOutput: string, schema: Record<string, string>): string {
@@ -1062,8 +1073,12 @@ async function runSubWorkflow(ctx: RunCtx, dagNode: DagNode, iter: number, feedb
   return { nodeId, agent: "sub-workflow", output, ms, schemaWarnings, notices, iteration: iter }
 }
 
-async function callAgent(client: OpencodeClient, sessionId: string, agent: string, text: string): Promise<string> {
-  const result = await client.session.prompt({ path: { id: sessionId }, body: { agent, parts: [{ type: "text", text }] } })
+async function callAgent(client: OpencodeClient, sessionId: string, agent: string | undefined, readOnly: boolean, text: string): Promise<string> {
+  const body: Record<string, unknown> = { parts: [{ type: "text", text }] }
+  if (agent) body.agent = agent
+  // opencode's API rejects fields it does not know; the hint is for the CLI host adapters only
+  if (runtime !== "opencode" && readOnly) body.readOnly = true
+  const result = await client.session.prompt({ path: { id: sessionId }, body })
   return extractText(result.data?.parts ?? result.parts ?? [])
 }
 
@@ -1145,13 +1160,16 @@ async function runDecisionNode(ctx: RunCtx, dagNode: DagNode, iter: number, feed
       resolved.push(head, ...reply.resolved, "")
       return reply.answers
     }
-    const mapped = def.agent_mapping?.opencode?.trim() || DECISION_FALLBACK_AGENT
-    const agentName = await resolveAgent(ctx.client, mapped)
+    // on opencode the fallback agent must exist there; a CLI host takes its own mapping, or its default agent
+    const agentName = runtime === "opencode"
+      ? await resolveAgent(ctx.client, def.agent_mapping?.opencode?.trim() || DECISION_FALLBACK_AGENT)
+      : mappedAgent(def)
     const session = await ctx.client.session.create({
       body: { title: `${ctx.scope}${nodeId}${states.length > 1 ? ` [${index}]` : ""}${iterLabel}`, parentID: ctx.sessionId },
     })
-    const reply = await askLlm(spec, state, (prompt) => callAgent(ctx.client, session.data.id, agentName, prompt))
-    resolved.push(head, `agent: ${agentName}`, ...reply.resolved, "")
+    // answering a question needs no edits: read-only on a CLI host
+    const reply = await askLlm(spec, state, (prompt) => callAgent(ctx.client, session.data.id, agentName, true, prompt))
+    resolved.push(head, `agent: ${agentName ?? `${runtime} default`}`, ...reply.resolved, "")
     return reply.answers
   }
 
@@ -1174,19 +1192,32 @@ async function runDecisionNode(ctx: RunCtx, dagNode: DagNode, iter: number, feed
   }
 }
 
+/** A model node that got no answer leaves what a failed tool leaves: its log with the reason, never an output. */
+function writeFailureLog(ctx: RunCtx, nodeId: string, iter: number, agent: string, ms: number, error: string, prompt?: string): void {
+  fs.writeFileSync(path.join(ctx.runDir, logFileName(nodeId)),
+    [`# ${nodeId}${iter > 1 ? ` (iter ${iter})` : ""}`, `- **Agent**: ${agent}`, `- **Elapsed**: ${ms} ms`, `- **Result**: FAILED — ${error}`,
+     ...(prompt ? ["", "## Prompt", "```", prompt, "```"] : [])].join("\n"))
+}
+
 async function runSingleNode(ctx: RunCtx, dagNode: DagNode, iter: number, extras: Pick<PromptExtras, "feedback" | "previousOutput">): Promise<NodeResult> {
   const { id: nodeId, def } = dagNode
   if (def.type === "sub-workflow") return runSubWorkflow(ctx, dagNode, iter, extras.feedback)
   if (def.type === "tool") return runToolNode(ctx, dagNode, iter, extras.feedback)
   if (def.type === "decision") return runDecisionNode(ctx, dagNode, iter, extras.feedback)
 
-  const mapped = def.agent_mapping?.opencode ?? ""
-  let agent: string
-  try {
-    agent = await resolveAgent(ctx.client, mapped)
-  } catch (err) {
-    return { nodeId, agent: mapped || "unknown", output: "", ms: 0, schemaWarnings: [], notices: [], iteration: iter, error: errorMessage(err) }
+  const mapped = mappedAgent(def)
+  const agent = nodeAgentLabel(def)
+  if (!mapped) log("warn", `node ${ctx.scope}${nodeId}: agent_mapping has no "${runtime}" entry — running as the host's default agent`)
+  if (mapped && runtime === "opencode") {
+    try {
+      await resolveAgent(ctx.client, mapped)
+    } catch (err) {
+      const error = errorMessage(err)
+      writeFailureLog(ctx, nodeId, iter, agent, 0, error)
+      return { nodeId, agent, output: "", ms: 0, schemaWarnings: [], notices: [], iteration: iter, error }
+    }
   }
+  const readOnly = READ_ONLY_ROLES.has(def.agent_mapping?.opencode ?? def.tech_stack?.agent ?? "")
 
   const built = buildPrompt(def, ctx.outputs, dagNode.branchParents, {
     ...extras,
@@ -1209,14 +1240,14 @@ async function runSingleNode(ctx: RunCtx, dagNode: DagNode, iter: number, extras
       body: { title: `${ctx.scope}${nodeId}${iter > 1 ? ` (iter ${iter})` : ""}`, parentID: ctx.sessionId },
     })
     const nodeSession = session.data.id
-    let outputText = await callAgent(ctx.client, nodeSession, agent, prompt)
+    let outputText = await callAgent(ctx.client, nodeSession, mapped, readOnly, prompt)
     // Strict nodes gate control flow (branch_on / input.select): one same-session repair pass if
     // the reply holds no JSON object. JSON is asked for in the prompt, never via opencode's
     // `format`: that forces tool_choice "required", which models such as Claude Opus 5.5 reject —
     // every strict call failed with an API error the TUI shows, before this retry answered it.
     if (strictJson && !extractJson(outputText)) {
       try {
-        outputText = await callAgent(ctx.client, nodeSession, agent,
+        outputText = await callAgent(ctx.client, nodeSession, mapped, readOnly,
           `Return ONLY a raw JSON object matching this schema: ${JSON.stringify(schema)}. No prose, no code fences. Your prior output was:\n${outputText}`)
       } catch {}
     }
@@ -1235,7 +1266,10 @@ async function runSingleNode(ctx: RunCtx, dagNode: DagNode, iter: number, extras
 
     return { nodeId, agent, output: outputText, ms, schemaWarnings, notices, iteration: iter }
   } catch (err) {
-    return { nodeId, agent, output: "", ms: Date.now() - t0, schemaWarnings: [], notices, iteration: iter, error: errorMessage(err) }
+    const error = errorMessage(err)
+    const ms = Date.now() - t0
+    writeFailureLog(ctx, nodeId, iter, agent, ms, error, prompt)
+    return { nodeId, agent, output: "", ms, schemaWarnings: [], notices, iteration: iter, error }
   }
 }
 
@@ -1860,19 +1894,63 @@ function v2Client(ctx: V2Context, model?: V2ModelRef): OpencodeClient {
 }
 
 // ── plugin entry ──
+export interface ServerInput {
+  client: OpencodeClient
+  directory: string
+  /** Which host's agents the model nodes run on; opencode itself never passes this. */
+  runtime?: RuntimeName
+}
+
+function attachHost(input: ServerInput) {
+  const { client, directory } = input
+  runtime = input.runtime ?? "opencode"
+  host = client
+  runHost = { client, directory }
+  // The panel — and POST /api/run with it — comes up with the instance, so agentry-watch can
+  // start a run in a project nobody has run anything in yet. A window still opens only per run.
+  void startPanelServer(directory)
+}
+
+export interface HostRun {
+  runId: string
+  /** Settles with the run summary; a thrown scheduler error rejects it. */
+  finished: Promise<string>
+}
+
+/**
+ * The scheduler for a host that embeds it (the MCP server on Claude Code / Codex): the same
+ * runWorkflow the opencode tool calls, started here so the caller gets the run id at once.
+ */
+export function createHostRunner(input: ServerInput) {
+  attachHost(input)
+  return {
+    start(file: string, opts: { input?: string; resumeRunId?: string } = {}): HostRun {
+      const loaded = loadWorkflowFile(input.directory, file)
+      if (!loaded.ok) throw new Error(loaded.error)
+      if (runInProgress) throw new Error(`a run is already going (${lastRunId}) — wait for it or stop it first`)
+      const runId = opts.resumeRunId ?? `run_${Date.now()}`
+      const finished = runWorkflow(input.client, input.directory, loaded.workflow, { runId, input: opts.input, resumeRunId: opts.resumeRunId })
+      finished.catch((err: unknown) => {
+        log("error", `run ${runId} failed: ${errorMessage(err)}`)
+        emitPanel({ type: "run.finished", runId, status: "error", at: ts() })
+      })
+      return { runId, finished }
+    },
+    busy: () => runInProgress,
+    stop: () => { abortFlag = true },
+    dispose: shutdownPanel,
+  }
+}
+
 export default {
   id: "agentry",
 
   // opencode 1
-  server: async (input: { client: OpencodeClient; directory: string }): Promise<Hooks> => {
+  server: async (input: ServerInput): Promise<Hooks> => {
     const { client, directory } = input
     // opencode 2 never calls server(): importing the v1 SDK here keeps it off that host's path
     const { tool } = await import("@opencode-ai/plugin")
-    host = client
-    runHost = { client, directory }
-    // The panel — and POST /api/run with it — comes up with the instance, so agentry-watch can
-    // start a run in a project nobody has run anything in yet. A window still opens only per run.
-    void startPanelServer(directory)
+    attachHost(input)
 
     return {
       tool: {
@@ -1897,9 +1975,7 @@ export default {
   setup: async (ctx: V2Context) => {
     const { directory } = ctx.location
     const client = v2Client(ctx)
-    host = client
-    runHost = { client, directory }
-    void startPanelServer(directory)
+    attachHost({ client, directory })
 
     const registration = await ctx.tool.transform((tools) => tools.add({
       name: "agentry_run",

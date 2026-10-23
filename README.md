@@ -200,12 +200,14 @@ The `mail` trigger reads Gmail and needs a Google OAuth client: run `agentry-wat
 
 ## Use it from other coding agents (MCP)
 
-[`packages/mcp`](packages/mcp) is an MCP server for one project. Through it, Claude Code, Codex, Cursor, opencode or any other MCP host can list, read, validate, edit and save workflows, start a run, follow it and stop it. Runs still execute on opencode, so the project needs the plugin from the quick start.
+[`packages/mcp`](packages/mcp) is an MCP server for one project. Through it, Claude Code, Codex, Cursor, opencode or any other MCP host can list, read, validate, edit and save workflows, start a run, follow it and stop it. A run executes on opencode through the plugin from the quick start, or, with `runtime: claude` or `codex`, inside the MCP server itself: every step is one headless `claude -p` or `codex exec` in the project, on your own account. Without the plugin, a run started from Claude Code or Codex uses that host's CLI by default. A step's `agent_mapping.claude_code` names a Claude Code subagent and `agent_mapping.codex` a Codex profile; without them the CLI's default agent runs it.
 
 ```sh
 pnpm --filter @agentry/mcp build
 claude mcp add agentry --scope project -- node /path/to/agentry/packages/mcp/dist/agentry-mcp.mjs --dir .
 ```
+
+The same file runs one workflow from a terminal and waits for it: `node packages/mcp/dist/agentry-mcp.mjs run review.yaml --runtime claude`.
 
 [`packages/mcp/README.md`](packages/mcp/README.md) has the setup for Codex, Cursor, opencode and Claude Desktop, plus a skill file that teaches an agent the workflow format.
 

@@ -5,10 +5,13 @@
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { CHECKPOINT_FILE, RUN_DIR_ROOT, outputFileName, type Checkpoint, type NodeState, type WorkflowEvent } from '@agentry/core';
+import { CHECKPOINT_FILE, RUN_DIR_ROOT, logFileName, outputFileName, type Checkpoint, type NodeState, type WorkflowEvent } from '@agentry/core';
+import { createHostClient, type HostRuntime } from '@agentry/plugin/hosts';
+import { createHostRunner } from '@agentry/plugin/runtime';
 import { Dispatcher } from '@agentry/trigger/dispatch';
 import { isRecord, livePanel, readJson, replayEvents, type LivePanel, type PanelInfo } from './panel';
 import { ToolError } from './project';
+import { hasOpencodePlugin, resolveRuntime, type Runtime, type RuntimeChoice } from './runtime';
 
 const REPORT_FILE = 'log.md';
 const PREVIEW_CHARS = 240;
@@ -23,6 +26,8 @@ export interface NodeReport {
   ms?: number;
   preview?: string;
   warnings?: string[];
+  /** Why a failed node failed. */
+  error?: string;
 }
 
 export interface RunReport {
@@ -83,6 +88,10 @@ function nodesFromDisk(cp: Checkpoint | null, runDir: string): Map<string, NodeR
       if (typeof out.result === 'string') node.preview = preview(out.result);
       if (Array.isArray(out.schemaWarnings) && out.schemaWarnings.length) node.warnings = out.schemaWarnings.filter((w): w is string => typeof w === 'string');
     }
+    // a failed node writes no output, only its log: the reason is the `Result: FAILED — …` entry
+    const logPath = path.join(runDir, logFileName(id));
+    const failure = fs.existsSync(logPath) ? /(?:^|\n)- \*\*Result\*\*: FAILED — ([\s\S]*?)(?=\n## |$)/.exec(fs.readFileSync(logPath, 'utf8')) : null;
+    if (failure?.[1]) node.error = failure[1].trim();
     nodes.set(id, node);
   }
   return nodes;
@@ -130,26 +139,66 @@ function applyEvents(nodes: Map<string, NodeReport>, events: WorkflowEvent[], ru
 
 function startFailure(message: string, opts: RunsOptions): string {
   const plugin = path.join(opts.projectDir, '.opencode', 'plugins');
-  const hasPlugin = fs.existsSync(plugin) && fs.readdirSync(plugin).some((f) => /^agentry\.(js|ts)$/.test(f));
   return [
     `could not start the run: ${message}`,
-    ...(hasPlugin ? [] : [`the Agentry plugin is not in ${plugin} (expected agentry.js) — the run needs it`]),
+    ...(hasOpencodePlugin(opts.projectDir) ? [] : [`the Agentry plugin is not in ${plugin} (expected agentry.js) — the run needs it`]),
     `opencode server: ${opts.serverUrl}${opts.autostart ? ' (started when nothing listens there; needs the opencode CLI on PATH or AGENTRY_OPENCODE_BIN)' : ' (autostart is off)'}`,
     'auth: OPENCODE_SERVER_PASSWORD when the server has one',
+    'to run on Claude Code or Codex instead, pass runtime "claude" or "codex" (or set AGENTRY_RUNTIME)',
   ].join('\n');
 }
+
+type HostRunner = ReturnType<typeof createHostRunner>;
+
+const HOST_RUNTIME: Readonly<Record<Exclude<Runtime, 'opencode'>, HostRuntime>> = { claude: 'claude_code', codex: 'codex' };
 
 export class Runs {
   private readonly dispatcher: Dispatcher;
   private readonly runsDir: string;
+  private hostRunner: { runtime: Runtime; runner: HostRunner } | null = null;
+  clientName: string | undefined;
 
   constructor(private readonly opts: RunsOptions) {
     this.dispatcher = new Dispatcher(opts);
     this.runsDir = path.join(opts.projectDir, ...RUN_DIR_ROOT.split('/'));
   }
 
+  runtimeFor(choice: RuntimeChoice | undefined): Runtime {
+    return resolveRuntime(choice, { projectDir: this.opts.projectDir, clientName: this.clientName });
+  }
+
+  /** The in-process scheduler for a CLI host; one per process, rebound when the runtime changes. */
+  private embedded(runtime: Exclude<Runtime, 'opencode'>): HostRunner {
+    if (this.hostRunner?.runtime === runtime) return this.hostRunner.runner;
+    if (this.hostRunner?.runner.busy()) throw new ToolError(`a ${this.hostRunner.runtime} run is already going — wait_for_run it or cancel_run first`);
+    const client = createHostClient(HOST_RUNTIME[runtime], {
+      directory: this.opts.projectDir,
+      log: (level, message) => this.opts.log(`${runtime} ${level}: ${message}`),
+    });
+    const runner = createHostRunner({ client, directory: this.opts.projectDir, runtime: HOST_RUNTIME[runtime] });
+    this.hostRunner = { runtime, runner };
+    return runner;
+  }
+
+  async dispose(): Promise<void> {
+    await this.hostRunner?.runner.dispose();
+    this.hostRunner = null;
+  }
+
   private live(): Promise<LivePanel | null> {
     return livePanel(this.opts.projectDir);
+  }
+
+  /** An embedded run's panel comes up a moment after start; until it shows the run, get_run would call it cancelled. */
+  private async visible(runId: string, finished: Promise<unknown>): Promise<void> {
+    let settled = false;
+    finished.then(() => { settled = true; }, () => { settled = true; });
+    const until = Date.now() + 5000;
+    while (!settled && Date.now() < until) {
+      const live = await this.live();
+      if (live?.busy && live.runId === runId) return;
+      await sleep(25);
+    }
   }
 
   private runIds(): string[] {
@@ -161,7 +210,22 @@ export class Runs {
       .sort((a, b) => runTime(b) - runTime(a) || b.localeCompare(a));
   }
 
-  async start(file: string, input: string | undefined): Promise<{ run_id: string; panel_port: number }> {
+  async start(file: string, input: string | undefined, choice: RuntimeChoice | undefined): Promise<{ run_id: string; runtime: Runtime; panel_port?: number }> {
+    const runtime = this.runtimeFor(choice);
+    if (runtime !== 'opencode') {
+      let run;
+      try {
+        run = this.embedded(runtime).start(file, { input });
+      } catch (err) {
+        throw new ToolError(err instanceof Error ? err.message : String(err));
+      }
+      run.finished.then(
+        (summary) => this.opts.log(`${runtime} run ${run.runId} finished\n${summary}`),
+        (err: unknown) => this.opts.log(`${runtime} run ${run.runId} failed: ${err instanceof Error ? err.message : String(err)}`),
+      );
+      await this.visible(run.runId, run.finished);
+      return { run_id: run.runId, runtime };
+    }
     let panel: PanelInfo;
     try {
       panel = await this.dispatcher.panel();
@@ -175,7 +239,7 @@ export class Runs {
       signal: AbortSignal.timeout(15_000),
     });
     const body = (await res.json().catch(() => ({}))) as { runId?: string; error?: string };
-    if (res.status === 202 && body.runId) return { run_id: body.runId, panel_port: panel.port };
+    if (res.status === 202 && body.runId) return { run_id: body.runId, runtime, panel_port: panel.port };
     if (res.status === 409) throw new ToolError(`a run is already going (${body.runId ?? '?'}) — wait_for_run it or cancel_run first`);
     if (res.status === 401) throw new ToolError('the panel rejected the token in .agentry/panel.json — the plugin restarted; try again');
     throw new ToolError(`run refused (${res.status}): ${body.error ?? 'no reason given'}`);
@@ -195,12 +259,14 @@ export class Runs {
     const id = runId ?? (live?.busy && live.runId ? live.runId : this.runIds()[0]);
     if (!id) throw new ToolError('no runs yet — run_workflow starts one');
     const runDir = path.join(this.runsDir, id);
-    const cp = readCheckpoint(runDir);
     const isLive = Boolean(live?.busy && live.runId === id);
+    // the events first, then the disk: whatever a node wrote before the event that ended it is read
+    const events = isLive && live ? await replayEvents(live.port) : null;
+    const cp = readCheckpoint(runDir);
     if (!cp && !isLive) throw new ToolError(`unknown run "${id}" — list_runs shows what exists`);
 
     const nodes = nodesFromDisk(cp, runDir);
-    const status = isLive && live ? applyEvents(nodes, await replayEvents(live.port), id) : settledStatus(cp);
+    const status = events ? applyEvents(nodes, events, id) : settledStatus(cp);
     const reportPath = path.join(runDir, REPORT_FILE);
     const report = fs.existsSync(reportPath) ? fs.readFileSync(reportPath, 'utf8') : undefined;
     return {

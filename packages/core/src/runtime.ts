@@ -13,7 +13,9 @@
 
 import { checkDecisionSpec, isBatchDecision } from './decision';
 import { checkToolSpec } from './tool';
-import type { AgentDefinition, BranchRoute, Condition, RouteCondition, Workflow } from './workflow';
+import type { AgentDefinition, BranchRoute, Condition, RouteCondition, RuntimeName, Workflow } from './workflow';
+
+export const RUNTIME_NAMES: readonly RuntimeName[] = ['opencode', 'claude_code', 'codex'];
 
 export const fromList = (from: string | string[] | undefined): string[] =>
   from === undefined ? [] : Array.isArray(from) ? from : [from];
@@ -241,7 +243,12 @@ export function checkRunnable(raw: unknown): RunnableCheck {
     else if (value.type !== 'sub-workflow') {
       if (typeof value.prompt !== 'string') errors.push(`agents.${id}: missing prompt`);
       if (!isRecord(value.agent_mapping)) errors.push(`agents.${id}: missing agent_mapping`);
-      else if (typeof value.agent_mapping.opencode !== 'string') errors.push(`agents.${id}.agent_mapping: missing opencode`);
+      else {
+        for (const host of RUNTIME_NAMES) {
+          const name = value.agent_mapping[host];
+          if (name !== undefined && typeof name !== 'string') errors.push(`agents.${id}.agent_mapping.${host}: expected a string`);
+        }
+      }
     }
 
     const input = isRecord(value.input) ? value.input : null;
