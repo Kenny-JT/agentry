@@ -4,6 +4,7 @@ import {
   edgeId,
   graphToWorkflow,
   isJsonOut,
+  isRouterDef,
   loopEdgeIds,
   orderedRouteTargets,
   useEdgesState,
@@ -515,7 +516,7 @@ export function App() {
     ? edges.filter((edge) => edge.source === selectedNode.id && !loops.has(edge.id)).map((edge) => edge.target)
     : [];
   const outgoingTo =
-    selectedNode?.data.definition.type === 'branch'
+    selectedNode && isRouterDef(selectedNode.data.definition)
       ? orderedRouteTargets(selectedNode.data.definition, outgoingTargets)
       : outgoingTargets;
   const embeddable: EmbeddableWorkflow[] =

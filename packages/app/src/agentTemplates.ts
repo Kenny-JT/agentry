@@ -1,6 +1,6 @@
 import type { AgentFlowNode, XYPosition } from '@agentry/canvas';
-import { HTTP_TIMEOUT_S, SCRIPT_TIMEOUT_S, TOOL_OUTPUT_SCHEMA } from '@agentry/core';
-import type { AgentDefinition, AgentType, ToolSpec } from '@agentry/core';
+import { decisionOutputSchema, HTTP_TIMEOUT_S, SCRIPT_TIMEOUT_S, TOOL_OUTPUT_SCHEMA } from '@agentry/core';
+import type { AgentDefinition, AgentType, DecisionSpec, ToolSpec } from '@agentry/core';
 
 export type AgentGroup = 'opencode' | 'omo' | 'control' | 'tools';
 
@@ -15,7 +15,20 @@ export interface AgentTemplate {
   outputSchema: Record<string, string>;
   /** Only for type === 'tool': the deterministic step the node performs. */
   tool?: ToolSpec;
+  /** Only for type === 'decision': the questions the node asks. */
+  decision?: DecisionSpec;
 }
+
+/** The questions a new decision step starts with: one choice it can route on. */
+export const defaultDecisionSpec = (): DecisionSpec => ({
+  questions: {
+    verdict: {
+      type: 'choice',
+      instructions: 'Is the upstream result ready to move on?',
+      options: { ready: 'It is complete and correct', revise: 'It needs another pass' },
+    },
+  },
+});
 
 export const AGENT_DROP_MIME = 'application/agentry-template';
 
@@ -172,6 +185,17 @@ export const agentTemplates: readonly AgentTemplate[] = [
     outputSchema: { decision: 'string' },
   },
   {
+    id: 'decision',
+    name: 'Decision',
+    description: 'Typed answers that pick a path',
+    group: 'control',
+    type: 'decision',
+    opencodeAgent: 'general',
+    prompt: '',
+    outputSchema: decisionOutputSchema(defaultDecisionSpec()),
+    decision: defaultDecisionSpec(),
+  },
+  {
     id: 'subflow',
     name: 'Sub-workflow',
     description: 'Run another workflow as one step',
@@ -245,6 +269,17 @@ export function templateToDefinition(template: AgentTemplate): AgentDefinition {
       type: template.type,
       output: { schema: template.outputSchema },
       tool: structuredClone(template.tool ?? { kind: 'http', url: '' }),
+    };
+  }
+  if (template.type === 'decision') {
+    const decision = structuredClone(template.decision ?? defaultDecisionSpec());
+    const first = Object.keys(decision.questions)[0];
+    return {
+      introduction: template.name,
+      type: template.type,
+      output: { schema: decisionOutputSchema(decision) },
+      decision,
+      ...(first ? { branch_on: first } : {}),
     };
   }
   const definition: AgentDefinition = {
