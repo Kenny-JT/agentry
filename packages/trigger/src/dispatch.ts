@@ -111,11 +111,21 @@ export class Dispatcher {
 
   /**
    * Any request naming the directory makes the server load that project (plugins included).
-   * The first load of a project also installs the plugin's dependency into `.opencode/`, which
-   * can take a minute or two, hence the long wait.
+   * opencode 2 names it as an API location (`/api/...?location[directory]=`); opencode 1 answers
+   * `/path?directory=`. A 2.x server answers that old path too — with its web app, loading
+   * nothing — so the 2.x route goes first and only a reply that is not its JSON falls back.
+   * The first load of a project can also install the plugin's dependency into `.opencode/`,
+   * which takes a minute or two, hence the long wait.
    */
   private async wakeProject(): Promise<void> {
-    const url = `${this.opts.serverUrl}/path?directory=${encodeURIComponent(this.opts.projectDir)}`;
+    const dir = encodeURIComponent(this.opts.projectDir);
+    const v2 = await this.wakeRequest(`${this.opts.serverUrl}/api/agent?location[directory]=${dir}`);
+    if (v2.ok && v2.headers.get('content-type')?.includes('application/json')) return;
+    const v1 = await this.wakeRequest(`${this.opts.serverUrl}/path?directory=${dir}`);
+    if (!v1.ok) throw new Error(`opencode server ${this.opts.serverUrl} answered ${v1.status} for ${v1.url}`);
+  }
+
+  private async wakeRequest(url: string): Promise<Response> {
     const wakeMs = 5 * 60_000;
     let res: Response;
     try {
@@ -126,8 +136,12 @@ export class Dispatcher {
       }
       throw err;
     }
-    if (res.status === 401) throw new Error(`opencode server ${this.opts.serverUrl} rejected the password (OPENCODE_SERVER_PASSWORD)`);
-    if (!res.ok) throw new Error(`opencode server ${this.opts.serverUrl} answered ${res.status} for ${url}`);
+    if (res.status === 401) {
+      throw new Error(this.opts.password
+        ? `opencode server ${this.opts.serverUrl} rejected the password (OPENCODE_SERVER_PASSWORD)`
+        : `opencode server ${this.opts.serverUrl} wants a password: start it with OPENCODE_SERVER_PASSWORD set and give Agentry the same value`);
+    }
+    return res;
   }
 
   private readPanelFile(): PanelInfo | null {
