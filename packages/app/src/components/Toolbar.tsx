@@ -1,6 +1,7 @@
 import { useId, useState } from 'react';
 import {
   BrandMark,
+  ChatIcon,
   ExportIcon,
   ImportIcon,
   PanelLeftIcon,
@@ -27,6 +28,8 @@ export interface ToolbarProps {
   onPanelPortChange: (port: string) => void;
   sidebarOpen: boolean;
   onToggleSidebar: () => void;
+  chatOpen: boolean;
+  onToggleChat: () => void;
   inspectorVisible: boolean;
   onToggleInspector: () => void;
 }
@@ -72,6 +75,8 @@ export function Toolbar({
   onPanelPortChange,
   sidebarOpen,
   onToggleSidebar,
+  chatOpen,
+  onToggleChat,
   inspectorVisible,
   onToggleInspector,
 }: ToolbarProps) {
@@ -184,6 +189,16 @@ export function Toolbar({
             onClick={onToggleSidebar}
           >
             <PanelLeftIcon size={16} filled={sidebarOpen} />
+          </button>
+          <button
+            type="button"
+            className={`agentry-layoutbtn${chatOpen ? ' is-active' : ''}`}
+            aria-pressed={chatOpen}
+            aria-label="Toggle AI chat"
+            title={`${chatOpen ? 'Hide' : 'Show'} AI chat`}
+            onClick={onToggleChat}
+          >
+            <ChatIcon size={16} filled={chatOpen} />
           </button>
           <button
             type="button"

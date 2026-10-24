@@ -56,6 +56,7 @@ https://github.com/user-attachments/assets/0ca33f9b-70fd-4dce-b958-42e703f32c6f
 - **运行时**：opencode 插件并行执行互不依赖的步骤，把每一步的输出和日志写到 `.agentry/runs/` 下，能从最近的检查点续跑，在独立窗口里打开实时面板，最后还能生成一份 Markdown 报告，写清每一步做了什么。
 - **模板**：常见任务的现成起点（审查改动、修 bug、补测试、调研问题、写发布说明、整理 GitHub issue、讲解代码库、把笔记整理成待办），在编辑器的 Templates 视图里一点就打开。文件在 [`workflows/templates`](workflows/templates)。
 - **在编辑器里看运行**：让编辑器指向你的项目，运行时就在你画图的那块画布上逐个点亮。
+- **在编辑器里用对话改 workflow**：画布旁的 AI 对话框会请本机的 opencode 服务修改 workflow。应用之前能看到它要增加、删除或修改哪些步骤和连线，以及会带来哪些问题；应用之后一键就能撤销。连 opencode 2 时，启动服务要设置 `OPENCODE_SERVER_PASSWORD`，并用 `opencode serve --cors <编辑器的地址>`。
 - **在其它编程 agent 里使用**：通过 MCP 服务，Claude Code、Codex、Cursor 等工具可以列出、检查、修改、运行和跟踪项目里的 workflow。
 - **触发器**：`agentry-watch` 会在这些时候自动启动 workflow：文件夹里来了新文件、到了设定时间、网页或 Gmail 收件箱有变化、你 push 到了某个 git 分支。
 
