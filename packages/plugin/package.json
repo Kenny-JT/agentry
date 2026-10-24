@@ -4,6 +4,16 @@
   "private": true,
   "type": "module",
   "description": "Agentry opencode plugin (runtime + live panel). Source of truth for .opencode/plugins/agentry.js, which `pnpm build` bundles from src/ together with @agentry/core and @agentry/design.",
+  "exports": {
+    "./runtime": {
+      "types": "./src/agentry.ts",
+      "default": "./src/agentry.ts"
+    },
+    "./hosts": {
+      "types": "./src/hosts.ts",
+      "default": "./src/hosts.ts"
+    }
+  },
   "scripts": {
     "build": "node build.mjs",
     "check": "node build.mjs --check",

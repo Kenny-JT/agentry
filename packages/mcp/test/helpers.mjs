@@ -18,8 +18,8 @@ export function seedProject(files = ["hero.yaml", "code-review.yaml", "branching
   return dir
 }
 
-export async function connect(projectDir, env = {}) {
-  const client = new Client({ name: "agentry-mcp-test", version: "0.0.0" })
+export async function connect(projectDir, env = {}, clientName = "agentry-mcp-test") {
+  const client = new Client({ name: clientName, version: "0.0.0" })
   const transport = new StdioClientTransport({
     command: process.execPath,
     args: [BUNDLE, "--dir", projectDir],

@@ -83,6 +83,7 @@ Semantics the runner enforces:
 - `type: sub-workflow` nodes carry a whole workflow under `tech_stack.workflow` instead of `prompt` / `agent_mapping`.
 - `documenter` needs no downstream wiring; it writes `log.md` beside the run artifacts (`.agentry/runs/<run_id>/`).
 - opencode agents to map onto: `build` (edits files), `explore` (reads), `plan`, or any agent the project defines.
+- For runs on Claude Code or Codex (`run_workflow` with `runtime: claude` or `codex`), `agent_mapping.claude_code` names a Claude Code subagent and `agent_mapping.codex` a Codex profile. A step without one runs as the CLI's default agent, read-only when its opencode agent is `explore` or `plan`.
 
 ## A typical exchange
 

@@ -200,12 +200,14 @@ node packages/trigger/dist/agentry-watch.mjs --dir path/to/your/project
 
 ## 在其它编程 agent 里使用（MCP）
 
-[`packages/mcp`](packages/mcp) 是一个面向单个项目的 MCP 服务。通过它，Claude Code、Codex、Cursor、opencode 或任何支持 MCP 的工具都可以列出、读取、校验、修改、保存 workflow，以及启动、跟踪和停止一次运行。运行本身仍然在 opencode 上执行，所以项目里要装好快速开始里说的插件。
+[`packages/mcp`](packages/mcp) 是一个面向单个项目的 MCP 服务。通过它，Claude Code、Codex、Cursor、opencode 或任何支持 MCP 的工具都可以列出、读取、校验、修改、保存 workflow，以及启动、跟踪和停止一次运行。运行可以在 opencode 上通过快速开始里说的插件执行；也可以用 `runtime: claude` 或 `codex` 直接在 MCP 服务里执行：每一步就是在项目里调用一次无头的 `claude -p` 或 `codex exec`，用的是你自己的账号。项目里没有插件时，从 Claude Code 或 Codex 发起的运行默认就用那个宿主的 CLI。步骤的 `agent_mapping.claude_code` 指定一个 Claude Code 子代理，`agent_mapping.codex` 指定一个 Codex 配置档；不写时由 CLI 的默认 agent 来跑。
 
 ```sh
 pnpm --filter @agentry/mcp build
 claude mcp add agentry --scope project -- node /path/to/agentry/packages/mcp/dist/agentry-mcp.mjs --dir .
 ```
+
+同一个文件也能在终端里跑一个 workflow 并等它结束：`node packages/mcp/dist/agentry-mcp.mjs run review.yaml --runtime claude`。
 
 Codex、Cursor、opencode 和 Claude Desktop 的配置方法见 [`packages/mcp/README.md`](packages/mcp/README.md)，那里还有一个教 agent 写 workflow 格式的 skill 文件。
 

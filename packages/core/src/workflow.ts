@@ -220,13 +220,24 @@ export interface TechStack {
   workflow?: Workflow;
 }
 
-/** Maps the abstract role onto each CLI's native agent. v1: opencode only. */
+/**
+ * Maps the abstract role onto each host's native agent. Every key is optional: a node
+ * runs on whichever host the run was started from, and a host whose key is absent uses
+ * its default agent (the runner warns, it does not refuse). The runner requires the
+ * block itself on every model node, so a workflow written for one host still declares
+ * where its roles come from.
+ */
 export interface AgentMapping {
   /** The opencode agent name this node runs as (e.g. "explore", "build"). */
-  opencode: string;
-  // claudeCode?: string; // added once Claude Code support lands
-  // codex?: string;      // added once Codex support lands
+  opencode?: string;
+  /** The Claude Code agent (`claude --agent <name>`): a subagent defined in .claude/agents or a plugin. */
+  claude_code?: string;
+  /** The Codex config profile (`codex exec --profile <name>`). */
+  codex?: string;
 }
+
+/** The hosts a run can execute on: the key of {@link AgentMapping} each one reads. */
+export type RuntimeName = keyof AgentMapping;
 
 /** A single agent node in the workflow (keyed by its id in `Workflow.agents`). */
 export interface AgentDefinition {

@@ -103,6 +103,9 @@ importers:
       '@agentry/core':
         specifier: workspace:*
         version: link:../core
+      '@agentry/plugin':
+        specifier: workspace:*
+        version: link:../plugin
       '@agentry/trigger':
         specifier: workspace:*
         version: link:../trigger

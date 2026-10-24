@@ -613,10 +613,32 @@ function InspectorForm({
                 <input
                   className="agentry-input"
                   value={def.agent_mapping?.opencode ?? ''}
-                  onChange={(event) => setField({ agent_mapping: { opencode: event.target.value } })}
+                  onChange={(event) => setField({ agent_mapping: { ...def.agent_mapping, opencode: event.target.value } })}
                   spellCheck={false}
                 />
                 <span className="agentry-field__hint">Native opencode agent this node runs as.</span>
+              </label>
+
+              <label className="agentry-field">
+                <span className="agentry-field__label">Claude Code agent (optional)</span>
+                <input
+                  className="agentry-input"
+                  value={def.agent_mapping?.claude_code ?? ''}
+                  onChange={(event) => setField({ agent_mapping: { ...def.agent_mapping, claude_code: event.target.value || undefined } })}
+                  spellCheck={false}
+                />
+                <span className="agentry-field__hint">Subagent for runs on Claude Code (claude --agent). Empty = the host default.</span>
+              </label>
+
+              <label className="agentry-field">
+                <span className="agentry-field__label">Codex profile (optional)</span>
+                <input
+                  className="agentry-input"
+                  value={def.agent_mapping?.codex ?? ''}
+                  onChange={(event) => setField({ agent_mapping: { ...def.agent_mapping, codex: event.target.value || undefined } })}
+                  spellCheck={false}
+                />
+                <span className="agentry-field__hint">Config profile for runs on Codex (codex exec --profile). Empty = the host default.</span>
               </label>
 
               <label className="agentry-field">
