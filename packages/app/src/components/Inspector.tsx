@@ -642,6 +642,17 @@ function InspectorForm({
               </label>
 
               <label className="agentry-field">
+                <span className="agentry-field__label">omo model (optional)</span>
+                <input
+                  className="agentry-input"
+                  value={def.agent_mapping?.omo ?? ''}
+                  onChange={(event) => setField({ agent_mapping: { ...def.agent_mapping, omo: event.target.value || undefined } })}
+                  spellCheck={false}
+                />
+                <span className="agentry-field__hint">Model for runs on omo (omo --model), e.g. sonnet. Empty = AGENTRY_OMO_MODEL or omo's default.</span>
+              </label>
+
+              <label className="agentry-field">
                 <span className="agentry-field__label">Prompt</span>
                 <textarea
                   className="agentry-textarea"
