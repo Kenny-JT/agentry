@@ -9,6 +9,7 @@ Notable changes to Agentry. The format follows [Keep a Changelog](https://keepac
 - Feedback loops: `input.feedback: { from, when, max }` sends a later step's output back to an earlier step and runs the steps in between again while that output still matches `when`, for at most `max` extra rounds (default 3, up to 10). A loop also ends when its output repeats, a run fails before it would pass 200 step runs, and the run summary says why each loop ended. The editor draws loop-back edges and edits their limits.
 - Decision steps (`type: decision`) answer typed questions (`choice`, `yes_no`, `score`) about the upstream outputs and can route on the answers the way a branch does. With `TYPESAFE_API_KEY` set, TypeSafe's Jev answers with calibrated probabilities; without it, the step's opencode agent is asked for the same probabilities. `for_each` asks the same questions about every item of a list. The editor adds and edits decision steps.
 - Eight workflow templates in `workflows/templates` (review your changes, fix a bug, add tests, research a question, draft release notes, triage GitHub issues, explain a codebase, turn notes into action items) and a Templates view in the editor that opens one as a new workflow.
+- An AI chat beside the canvas: describe a change, and a local opencode server (opencode 1 or 2) answers with a complete workflow. The proposal shows the steps and connections it adds, removes or changes, its validation problems and the YAML; Apply puts it on the canvas and Undo puts the previous workflow back.
 
 ### Fixed
 
