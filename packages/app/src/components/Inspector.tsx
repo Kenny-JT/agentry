@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { TriggerIcon, WORKFLOW_INPUT_ID } from '@agentry/canvas';
 import type { AgentFlowNode } from '@agentry/canvas';
-import { activeTriggerKinds, asPatternList, checkTriggers, FEEDBACK_DEFAULT_MAX, FEEDBACK_MAX_LIMIT, TRIGGER_DEFAULTS, TRIGGER_KINDS } from '@agentry/core';
+import { activeTriggerKinds, asPatternList, checkTriggers, decisionOutputSchema, FEEDBACK_DEFAULT_MAX, FEEDBACK_MAX_LIMIT, isBatchDecision, isRouter, TRIGGER_DEFAULTS, TRIGGER_KINDS } from '@agentry/core';
 import type {
   AgentDefinition,
   AgentInput,
@@ -9,6 +9,7 @@ import type {
   AgentType,
   BranchRoute,
   Condition,
+  DecisionSpec,
   FeedbackLoop,
   FileTrigger,
   GitTrigger,
@@ -33,11 +34,14 @@ import {
   PopOutIcon,
   TrashIcon,
 } from './icons';
+import { defaultDecisionSpec } from '../agentTemplates';
 import { clampDockedWidth, startPointerDrag } from '../inspectorLayout';
 import type { InspectorPlacement } from '../inspectorLayout';
+import { DecisionSection } from './DecisionSection';
+import type { QuestionRename } from './DecisionSection';
 import { defaultToolSpec, ToolSection, toolSchemaFor } from './ToolSection';
 
-const AGENT_TYPES: readonly AgentType[] = ['straight', 'branch', 'reporter', 'documenter', 'sub-workflow', 'tool'];
+const AGENT_TYPES: readonly AgentType[] = ['straight', 'branch', 'decision', 'reporter', 'documenter', 'sub-workflow', 'tool'];
 
 export type IncomingField = { key: string; type: string };
 export type IncomingSource = { id: string; label: string; fields: IncomingField[] };
@@ -175,6 +179,18 @@ function cleanToolSpec(spec: ToolSpec | undefined): ToolSpec {
   return Object.fromEntries(entries) as unknown as ToolSpec;
 }
 
+/** Optional keys only when set; `state` / `for_each` first, so the exported block reads top-down. */
+function cleanDecisionSpec(spec: DecisionSpec | undefined): DecisionSpec {
+  const base = spec ?? defaultDecisionSpec();
+  return {
+    ...(base.state?.trim() ? { state: base.state } : {}),
+    ...(base.for_each?.trim() ? { for_each: base.for_each.trim() } : {}),
+    questions: base.questions,
+    ...(base.min_confidence !== undefined ? { min_confidence: base.min_confidence } : {}),
+    ...(base.model?.trim() ? { model: base.model.trim() } : {}),
+  };
+}
+
 function cleanDefinition(def: AgentDefinition): AgentDefinition {
   const isSub = def.type === 'sub-workflow';
   const isTool = def.type === 'tool';
@@ -184,7 +200,12 @@ function cleanDefinition(def: AgentDefinition): AgentDefinition {
     output: cleanOutput(def.output),
   };
   if (isTool) out.tool = cleanToolSpec(def.tool);
-  else if (!isSub) {
+  else if (def.type === 'decision') {
+    out.decision = cleanDecisionSpec(def.decision);
+    // no prompt; the agent only answers when TYPESAFE_API_KEY is not set
+    const fallback = def.agent_mapping?.opencode?.trim();
+    if (fallback) out.agent_mapping = { opencode: fallback };
+  } else if (!isSub) {
     out.prompt = def.prompt ?? '';
     out.agent_mapping = def.agent_mapping ?? { opencode: 'build' };
   }
@@ -194,7 +215,7 @@ function cleanDefinition(def: AgentDefinition): AgentDefinition {
   if (tech) out.tech_stack = tech;
   const trigger = cleanTrigger(def.trigger);
   if (trigger) out.trigger = trigger;
-  if (def.type === 'branch') {
+  if (isRouter(def)) {
     if (def.branch_on && def.branch_on.trim()) out.branch_on = def.branch_on.trim();
     const routes = cleanRoutes(def.routes);
     if (routes) out.routes = routes;
@@ -336,7 +357,9 @@ function InspectorForm({
   const nodeId = node.id;
   const def = node.data.definition;
   const [idDraft, setIdDraft] = useState(node.data.agentId);
-  const [schemaRows, setSchemaRows] = useState<SchemaRow[]>(() => schemaToRows(def.output?.schema ?? {}));
+  const [schemaRows, setSchemaRows] = useState<SchemaRow[]>(() =>
+    schemaToRows(def.type === 'decision' && def.decision ? decisionOutputSchema(def.decision) : (def.output?.schema ?? {})),
+  );
 
   const emit = (next: AgentDefinition, rows: SchemaRow[] = schemaRows) =>
     onChangeDefinition(nodeId, cleanDefinition({ ...next, output: { ...next.output, schema: rowsToSchema(rows) } }));
@@ -355,6 +378,16 @@ function InspectorForm({
   const setRows = (rows: SchemaRow[]) => {
     setSchemaRows(rows);
     emit(def, rows);
+  };
+
+  // the derived fields and the routed-on field follow every edit of the questions
+  const setDecision = (decision: DecisionSpec, renamed?: QuestionRename) => {
+    const rows = schemaToRows(decisionOutputSchema(decision));
+    setSchemaRows(rows);
+    const followed = renamed && def.branch_on === renamed.from ? renamed.to : def.branch_on;
+    // one that routes keeps a field that still exists; one that does not route stays that way
+    const branchOn = !followed ? undefined : rows.some((row) => row.key === followed) ? followed : Object.keys(decision.questions)[0];
+    emit({ ...def, decision, branch_on: branchOn }, rows);
   };
 
   const trigger = def.trigger;
@@ -547,14 +580,22 @@ function InspectorForm({
               value={def.type ?? 'straight'}
               onChange={(event) => {
                 const type = event.target.value as AgentType;
-                if (type !== 'tool' || def.tool) {
-                  setField({ type });
+                if (type === 'tool' && !def.tool) {
+                  // becoming a tool: start from an HTTP spec and the schema it always produces
+                  const rows = schemaToRows(toolSchemaFor('http'));
+                  setSchemaRows(rows);
+                  emit({ ...def, type, tool: defaultToolSpec('http') }, rows);
                   return;
                 }
-                // becoming a tool: start from an HTTP spec and the schema it always produces
-                const rows = schemaToRows(toolSchemaFor('http'));
-                setSchemaRows(rows);
-                emit({ ...def, type, tool: defaultToolSpec('http') }, rows);
+                if (type === 'decision' && !def.decision) {
+                  // becoming a decision: one question to route on, and the fields its answers produce
+                  const decision = defaultDecisionSpec();
+                  const rows = schemaToRows(decisionOutputSchema(decision));
+                  setSchemaRows(rows);
+                  emit({ ...def, type, decision, branch_on: Object.keys(decision.questions)[0] }, rows);
+                  return;
+                }
+                setField({ type });
               }}
             >
               {AGENT_TYPES.map((type) => (
@@ -565,7 +606,7 @@ function InspectorForm({
             </select>
           </label>
 
-          {def.type !== 'sub-workflow' && def.type !== 'tool' && (
+          {def.type !== 'sub-workflow' && def.type !== 'tool' && def.type !== 'decision' && (
             <>
               <label className="agentry-field">
                 <span className="agentry-field__label">opencode agent</span>
@@ -604,6 +645,16 @@ function InspectorForm({
               setSchemaRows(rows);
               emit({ ...def, tool }, rows);
             }}
+          />
+        )}
+
+        {def.type === 'decision' && (
+          <DecisionSection
+            spec={def.decision ?? defaultDecisionSpec()}
+            fallbackAgent={def.agent_mapping?.opencode ?? ''}
+            incoming={incoming}
+            onChange={setDecision}
+            onFallbackAgent={(opencode) => setField({ agent_mapping: { opencode } })}
           />
         )}
 
@@ -679,7 +730,7 @@ function InspectorForm({
           />
         </section>
 
-        {def.type !== 'sub-workflow' && (
+        {def.type !== 'sub-workflow' && def.type !== 'decision' && (
           <section className="agentry-section">
             <span className="agentry-section__title">Output</span>
 
@@ -707,9 +758,22 @@ function InspectorForm({
           </section>
         )}
 
-        {def.type === 'branch' && (
+        {def.type === 'decision' && (
           <section className="agentry-section">
-            <span className="agentry-section__title">Branch routing</span>
+            <span className="agentry-section__title">Output</span>
+            <RefFieldList label="Fields" fields={schemaFields(decisionOutputSchema(def.decision ?? defaultDecisionSpec()))} />
+            <span className="agentry-field__hint">
+              {isBatchDecision(def.decision)
+                ? 'One record per item in items, how many items got each answer in counts, and the unsure items by index.'
+                : 'Each answer with its confidence, the questions answered below the confidence bar in unsure, and the backend that answered.'}
+            </span>
+          </section>
+        )}
+
+        {/* a single decision shows it too: picking a field is what makes it route */}
+        {(def.type === 'branch' || (def.type === 'decision' && !isBatchDecision(def.decision))) && (
+          <section className="agentry-section">
+            <span className="agentry-section__title">{def.type === 'decision' ? 'Routing' : 'Branch routing'}</span>
 
             <label className="agentry-field">
               <span className="agentry-field__label">Route on field</span>
@@ -729,13 +793,15 @@ function InspectorForm({
                   ))}
               </select>
               <span className="agentry-field__hint">
-                Output field whose value decides which port an edge takes.
+                {def.type === 'decision'
+                  ? 'A choice routes on its option name, a yes / no on true or false, a score on its expected level (0 = the first).'
+                  : 'Output field whose value decides which port an edge takes.'}
               </span>
             </label>
 
             {outgoingTo.length === 0 ? (
               <p className="agentry-field__hint">
-                Connect this branch to downstream nodes — each connection is a port you can gate below.
+                Connect this {def.type === 'decision' ? 'decision' : 'branch'} to downstream nodes — each connection is a port you can gate below.
               </p>
             ) : (
               <>
@@ -842,7 +908,7 @@ function InspectorForm({
           </section>
         )}
 
-        {def.type !== 'sub-workflow' && def.type !== 'tool' && (
+        {def.type !== 'sub-workflow' && def.type !== 'tool' && def.type !== 'decision' && (
           <details className="agentry-collapse">
             <summary>Tech stack</summary>
             <div className="agentry-collapse__body">

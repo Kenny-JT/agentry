@@ -1378,6 +1378,13 @@ button {
   gap: var(--agentry-space-md);
 }
 
+.agentry-question__head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+  gap: var(--agentry-space-md);
+  align-items: center;
+}
+
 .agentry-route__arrow {
   color: var(--agentry-color-type-branch);
   font-weight: var(--agentry-fw-bold);

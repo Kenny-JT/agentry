@@ -12,6 +12,8 @@ export {
   graphToWorkflow,
   isBoundaryId,
   isJsonOut,
+  isRouterDef,
+  isRouterType,
   loopEdgeIds,
   orderedRouteTargets,
   topoOrder,

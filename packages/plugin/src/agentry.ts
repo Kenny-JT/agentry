@@ -7,14 +7,20 @@ import * as http from "node:http"
 import { randomUUID } from "node:crypto"
 import { exec, spawn } from "node:child_process"
 import {
+  batchRecord,
   branchParents,
   CHECKPOINT_FILE,
   checkRunnable,
+  decisionAgentLabel,
+  decisionRecord,
+  decisionStates,
   extractJson,
   FEEDBACK_DEFAULT_MAX,
   feedbackLoopBody,
   fromList,
   inputSources,
+  isBatchDecision,
+  isRouter,
   joinMode,
   logFileName,
   matchesCondition,
@@ -28,10 +34,11 @@ import {
   toolAgentLabel,
   validateWorkflow as lintWorkflow,
 } from "@agentry/core"
-import type { AgentDefinition, Checkpoint, Condition, LoopCheckpoint, NodeState, SelectFallback, Workflow, WorkflowEvent } from "@agentry/core"
+import type { AgentDefinition, Checkpoint, Condition, DecisionAnswers, LoopCheckpoint, NodeState, SelectFallback, Workflow, WorkflowEvent } from "@agentry/core"
 import { THEMES } from "@agentry/design"
 import { PANEL_TOKENS_CSS } from "./panelTokens"
 import { runTool, ToolError } from "./tools"
+import { askJev, askLlm, DecisionError, JEV_CONCURRENCY, LLM_CONCURRENCY, mapLimited, pickBackend } from "./decision"
 
 const PANEL_FILE = ".agentry/panel.json" // App-side discovery file
 const REPORT_FILE = "log.md" // whole-run report the documenter writes beside the node artifacts (D19)
@@ -926,6 +933,7 @@ function documenterRecords(ctx: RunCtx, selfId: string): string {
       if (r.warnings?.length) lines.push(`- Warnings: ${r.warnings.join("; ")}`)
       if (def?.prompt) lines.push(`- Instruction: ${clip(def.prompt.trim(), 600)}`)
       else if (def?.tool) lines.push(`- Tool: ${clip(JSON.stringify(def.tool), 600)}`)
+      else if (def?.decision) lines.push(`- Decision: ${clip(JSON.stringify(def.decision.questions), 600)}`)
       const output = ctx.outputs.get(r.nodeId)
       if (output) lines.push("- Output:", "```", clip(output.trim(), 3000), "```")
       return lines.join("\n")
@@ -936,7 +944,9 @@ function documenterRecords(ctx: RunCtx, selfId: string): string {
 const titleCase = (key: string) => key.replace(/[_-]+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())
 
 const nodeAgentLabel = (def: AgentDefinition): string =>
-  def.type === "tool" ? toolAgentLabel(def.tool) : def.agent_mapping?.opencode ?? "sub-workflow"
+  def.type === "tool" ? toolAgentLabel(def.tool)
+    : def.type === "decision" ? decisionAgentLabel(pickBackend(process.env))
+    : def.agent_mapping?.opencode ?? "sub-workflow"
 
 /** The whole-run report: a deterministic step table + the documenter's narrative (D19). */
 function renderRunReport(ctx: RunCtx, docId: string, docOutput: string, schema: Record<string, string>): string {
@@ -1096,10 +1106,79 @@ async function runToolNode(ctx: RunCtx, dagNode: DagNode, iter: number, feedback
   }
 }
 
+const DECISION_FALLBACK_AGENT = "general"
+
+// A decision node asks typed questions instead of prompting for text: Jev answers them with
+// calibrated probabilities when TYPESAFE_API_KEY is set, else the fallback agent is asked for the
+// same probabilities as strict JSON. Batch mode (`for_each`) asks once per item, bounded in flight.
+async function runDecisionNode(ctx: RunCtx, dagNode: DagNode, iter: number, feedback?: LoopCheckpoint): Promise<NodeResult> {
+  const { id: nodeId, def } = dagNode
+  const backend = pickBackend(process.env)
+  const agent = decisionAgentLabel(backend)
+  const t0 = Date.now()
+  const iterLabel = iter > 1 ? ` (iter ${iter})` : ""
+  const fail = (error: string, resolved: string[] = []): NodeResult => {
+    const ms = Date.now() - t0
+    fs.writeFileSync(path.join(ctx.runDir, logFileName(nodeId)),
+      [`# ${nodeId}${iterLabel}`, `- **Agent**: ${agent}`, `- **Elapsed**: ${ms} ms`, `- **Result**: FAILED — ${error}`, "", "## Resolved", "```", ...resolved, "```"].join("\n"))
+    return { nodeId, agent, output: "", ms, schemaWarnings: [], notices: [], iteration: iter, error }
+  }
+  const spec = def.decision
+  if (!spec) return fail("decision node has no decision block")
+  let states: unknown[]
+  let notices: string[]
+  try {
+    // a loop's feedback reaches a decision head the way it reaches a tool head: the tail's output under its own id
+    const sources = feedback ? [...dagNode.sources, feedback.from] : dagNode.sources
+    const outputs = feedback ? new Map([...ctx.outputs, [feedback.from, feedback.text]]) : ctx.outputs
+    ;({ states, notices } = decisionStates(spec, { sources, outputs, input: ctx.inbound }))
+  } catch (err) {
+    return fail(errorMessage(err))
+  }
+  for (const n of notices) log("warn", `decision ${ctx.scope}${nodeId}: ${n}`)
+
+  const resolved: string[] = []
+  const askOne = async (state: unknown, index: number): Promise<DecisionAnswers> => {
+    const head = states.length > 1 ? `### item ${index}` : "### state"
+    if (backend === "jev") {
+      const reply = await askJev({ spec, state, env: process.env })
+      resolved.push(head, ...reply.resolved, "")
+      return reply.answers
+    }
+    const mapped = def.agent_mapping?.opencode?.trim() || DECISION_FALLBACK_AGENT
+    const agentName = await resolveAgent(ctx.client, mapped)
+    const session = await ctx.client.session.create({
+      body: { title: `${ctx.scope}${nodeId}${states.length > 1 ? ` [${index}]` : ""}${iterLabel}`, parentID: ctx.sessionId },
+    })
+    const reply = await askLlm(spec, state, (prompt) => callAgent(ctx.client, session.data.id, agentName, prompt))
+    resolved.push(head, `agent: ${agentName}`, ...reply.resolved, "")
+    return reply.answers
+  }
+
+  try {
+    const perState = await mapLimited(states, backend === "jev" ? JEV_CONCURRENCY : LLM_CONCURRENCY, askOne)
+    const record = isBatchDecision(spec)
+      ? { ...batchRecord(spec, perState), backend }
+      : { ...decisionRecord(spec, perState[0] ?? {}), backend }
+    const output = JSON.stringify(record)
+    const ms = Date.now() - t0
+    fs.writeFileSync(path.join(ctx.runDir, outputFileName(nodeId)),
+      JSON.stringify({ nodeId, agent, result: output, elapsed_ms: ms, iteration: iter, schemaWarnings: [] }, null, 2))
+    fs.writeFileSync(path.join(ctx.runDir, logFileName(nodeId)),
+      [`# ${nodeId}${iterLabel}`, `- **Agent**: ${agent}`, `- **Elapsed**: ${ms} ms`, `- **Iteration**: ${iter}`, `- **States**: ${states.length}`,
+       ...(notices.length ? ["", "## Template notices", ...notices.map((n) => `- ${n}`)] : []),
+       "", "## Questions", "```json", JSON.stringify(spec.questions, null, 2), "```", "", "## Resolved", ...resolved, "## Output", output].join("\n"))
+    return { nodeId, agent, output, ms, schemaWarnings: [], notices: [], iteration: iter }
+  } catch (err) {
+    return err instanceof DecisionError ? fail(err.message, [...resolved, ...err.resolved]) : fail(errorMessage(err), resolved)
+  }
+}
+
 async function runSingleNode(ctx: RunCtx, dagNode: DagNode, iter: number, extras: Pick<PromptExtras, "feedback" | "previousOutput">): Promise<NodeResult> {
   const { id: nodeId, def } = dagNode
   if (def.type === "sub-workflow") return runSubWorkflow(ctx, dagNode, iter, extras.feedback)
   if (def.type === "tool") return runToolNode(ctx, dagNode, iter, extras.feedback)
+  if (def.type === "decision") return runDecisionNode(ctx, dagNode, iter, extras.feedback)
 
   const mapped = def.agent_mapping?.opencode ?? ""
   let agent: string
@@ -1436,7 +1515,7 @@ async function runGraph(ctx: RunCtx, dag: Dag, st: GraphState, hooks: GraphHooks
         if (decideLoops(r.nodeId, r.output).length > 0) {
           // a new round took the tail back to pending: its port decision belongs to the next round
           doneThisWave.splice(doneThisWave.indexOf(r.nodeId), 1)
-        } else if (def.type === "branch" && def.branch_on) {
+        } else if (isRouter(def) && def.branch_on) {
           // D16: exactly one port — the first matching route in routes[] order, else the default
           const value = extractJson(r.output)?.[def.branch_on]
           const routes = def.routes ?? []

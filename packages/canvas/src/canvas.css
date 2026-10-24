@@ -34,6 +34,9 @@
 .agentry-canvas .react-flow__edge-path.is-type-branch {
   stroke: var(--agentry-color-type-branch);
 }
+.agentry-canvas .react-flow__edge-path.is-type-decision {
+  stroke: var(--agentry-color-type-decision);
+}
 .agentry-canvas .react-flow__edge-path.is-type-subworkflow {
   stroke: var(--agentry-color-type-subworkflow);
 }
@@ -316,6 +319,9 @@
 .agentry-node[data-type='tool'] .agentry-node__type {
   color: var(--agentry-color-type-tool);
 }
+.agentry-node[data-type='decision'] .agentry-node__type {
+  color: var(--agentry-color-type-decision);
+}
 
 /* ── Tool: a deterministic step with no model. Same box as a straight node so
    routing / fork / minimap are untouched, but square corners, a flat (no
@@ -343,6 +349,26 @@
 .agentry-node__tool-glyph {
   display: inline-flex;
   color: var(--agentry-color-type-tool);
+}
+
+/* ── Decision: typed answers instead of text. The tool's square box (it hands
+   on fields, not prose) with a solid edge in the decision tint, since a model
+   still answers; the mapping chip lists the questions it asks. */
+.agentry-node[data-type='decision'] .agentry-node__card {
+  border-radius: var(--agentry-radius-sm);
+  border-color: color-mix(in srgb, var(--agentry-color-type-decision) 55%, var(--agentry-color-border-default));
+}
+
+.agentry-node[data-type='decision'].is-selected .agentry-node__card {
+  border-color: var(--agentry-color-accent);
+}
+
+.agentry-node[data-type='decision'] .agentry-node__mapping {
+  border-color: color-mix(in srgb, var(--agentry-color-type-decision) 35%, var(--agentry-color-border-subtle));
+}
+
+.agentry-node[data-type='decision'] .agentry-node__mapping-val {
+  color: var(--agentry-color-type-decision);
 }
 
 /* ── Sub-workflow: subroutine node drawn as a flat hexagon — the straight card
@@ -835,6 +861,11 @@
 .agentry-minimap__node.is-type-branch {
   fill: var(--agentry-color-type-branch);
   stroke: var(--agentry-color-type-branch);
+  fill-opacity: 0.28;
+}
+.agentry-minimap__node.is-type-decision {
+  fill: var(--agentry-color-type-decision);
+  stroke: var(--agentry-color-type-decision);
   fill-opacity: 0.28;
 }
 .agentry-minimap__node.is-type-reporter {

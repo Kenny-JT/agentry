@@ -5,8 +5,9 @@
  * plugin can run the exact same rules.
  */
 
+import { checkDecisionSpec, decisionOutputSchema } from './decision';
 import { dependencyGraph, feedbackLoopBody, findCycles } from './loops';
-import { branchParents, FEEDBACK_MAX_LIMIT, inputSources, isValidFeedbackMax, joinMode } from './runtime';
+import { branchParents, FEEDBACK_MAX_LIMIT, inputSources, isRouter, isValidFeedbackMax, joinMode } from './runtime';
 import { checkToolSpec, templateRefs, toolTemplateFields } from './tool';
 import { checkTriggers } from './triggers';
 import type { AgentDefinition, Workflow } from './workflow';
@@ -70,12 +71,44 @@ function feedbackIssues(id: string, workflow: Pick<Workflow, 'agents'>): Validat
   return issues;
 }
 
+/** A decision node's `decision` block: shape errors, plus a warning per `{ref}` in `state` / `for_each` that is not an upstream source or `input`. */
+function decisionIssues(id: string, def: AgentDefinition, sources: readonly string[]): ValidationIssue[] {
+  const issues: ValidationIssue[] = [];
+  if (!def.decision) {
+    issues.push({ severity: 'error', code: 'decision-missing', nodeId: id, field: 'decision', message: `"${id}" is a decision node but has no decision block.` });
+    return issues;
+  }
+  for (const message of checkDecisionSpec(id, def.decision, def.routes !== undefined)) {
+    issues.push({ severity: 'error', code: 'decision-invalid', nodeId: id, field: 'decision', message });
+  }
+  if (issues.length) return issues;
+  const templated = [{ field: 'state', text: def.decision.state }, { field: 'for_each', text: def.decision.for_each }];
+  for (const { field, text } of templated) {
+    if (text === undefined) continue;
+    for (const ref of templateRefs(text)) {
+      if (ref.root === 'input' || sources.includes(ref.root)) continue;
+      issues.push({
+        severity: 'warning',
+        code: 'template-unknown-source',
+        nodeId: id,
+        field,
+        message: `"${id}" references ${ref.raw} in decision.${field}, but "${ref.root}" is not an upstream of this node (nor "input") — it is left as written.`,
+      });
+    }
+  }
+  return issues;
+}
+
 export function validateWorkflow(workflow: Workflow): ValidationIssue[] {
   const issues: ValidationIssue[] = [];
   const agents = workflow.agents ?? {};
   const ids = Object.keys(agents);
   const has = (id: string): boolean => Boolean(agents[id]);
-  const fieldsOf = (id: string): string[] => Object.keys(agents[id]?.output?.schema ?? {});
+  const fieldsOf = (id: string): string[] => {
+    const def = agents[id];
+    if (def?.type === 'decision' && def.decision) return Object.keys(decisionOutputSchema(def.decision));
+    return Object.keys(def?.output?.schema ?? {});
+  };
   const parents = branchParents({ agents });
 
   const consumed = new Set<string>();
@@ -96,6 +129,7 @@ export function validateWorkflow(workflow: Workflow): ValidationIssue[] {
     if (!def) continue;
 
     if (def.type === 'tool') issues.push(...toolIssues(id, def, inputSources(def, parents.get(id) ?? [])));
+    if (def.type === 'decision') issues.push(...decisionIssues(id, def, inputSources(def, parents.get(id) ?? [])));
 
     const feedback = feedbackIssues(id, { agents });
     issues.push(...feedback);
@@ -119,7 +153,7 @@ export function validateWorkflow(workflow: Workflow): ValidationIssue[] {
       }
     }
 
-    if (def.type === 'branch' && def.routes) {
+    if (isRouter(def) && def.routes) {
       let feeds = false;
       for (const route of def.routes) {
         if (has(route.to)) {

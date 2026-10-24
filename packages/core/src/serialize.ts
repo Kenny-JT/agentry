@@ -43,7 +43,8 @@ export function normalizeWorkflow(raw: unknown): Workflow {
       ...def,
       output: { ...output, schema: output.schema ?? {} },
     };
-    if (def.type !== 'sub-workflow' && def.type !== 'tool') {
+    // a tool runs no agent; a decision has no prompt, and its agent_mapping, when given, only names the fallback agent
+    if (def.type !== 'sub-workflow' && def.type !== 'tool' && def.type !== 'decision') {
       normalized.prompt = def.prompt ?? '';
       normalized.agent_mapping = def.agent_mapping ?? { opencode: 'build' };
     }

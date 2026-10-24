@@ -64,7 +64,7 @@ const numberOr = (raw: string, fallback: number): number => {
 };
 
 /** A text field whose value is committed on blur, so typing never re-renders the whole graph per keystroke. */
-function DeferredText({
+export function DeferredText({
   label,
   hint,
   value,
@@ -99,7 +99,7 @@ function DeferredText({
   );
 }
 
-function ReferenceHint({ incoming }: { incoming: IncomingSource[] }) {
+export function ReferenceHint({ incoming }: { incoming: IncomingSource[] }) {
   const refs = incoming.flatMap((source) =>
     source.id === WORKFLOW_INPUT_ID ? ['{input}'] : [`{${source.id}}`, ...source.fields.map((f) => `{${source.id}.${f.key}}`)],
   );

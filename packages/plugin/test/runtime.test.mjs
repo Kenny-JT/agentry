@@ -568,6 +568,157 @@ test("a branch routes on a field a tool produced upstream; tool nodes join waves
   }
 })
 
+// ── decision nodes: typed answers from Jev (fake TypeSafe server) or the LLM fallback ──
+
+const questions = {
+  category: { type: "choice", instructions: "Which team", options: { billing: "Payments", technical: "Bugs", other: null } },
+  urgent: { type: "yes_no", instructions: "The message is urgent" },
+  severity: { type: "score", instructions: "How severe", levels: ["none", "minor", "major", "critical"] },
+}
+const decision = (spec, extra = {}) => ({ type: "decision", decision: { questions, ...spec }, output: { schema: {} }, ...extra })
+const jevAnswer = (category, urgent, level) => ({
+  category: { type: "choice", choice: category, probabilities: { billing: category === "billing" ? 0.9 : 0.05, technical: category === "technical" ? 0.9 : 0.05, other: 0.05 }, confidence: 0.85 },
+  urgent: { type: "noul", noul: urgent },
+  severity: { type: "score", score: level, legend: {}, probabilities: Object.fromEntries([0, 1, 2, 3].map((i) => [i, i === level ? 1 : 0])), confidence: 1 },
+})
+
+/** A fake api.typesafe.ai: `answer(state, body)` → the answers map, or a status number to fail with. */
+function fakeTypeSafe(answer) {
+  const requests = []
+  return localServer((req, res) => {
+    let body = ""
+    req.on("data", (c) => { body += c })
+    req.on("end", () => {
+      const parsed = JSON.parse(body)
+      requests.push({ url: req.url, auth: req.headers.authorization, body: parsed })
+      const out = answer(parsed.state, parsed, requests.length)
+      if (typeof out === "number") { res.writeHead(out, { "Content-Type": "application/json" }); res.end(JSON.stringify({ error: `status ${out}` })); return }
+      res.writeHead(200, { "Content-Type": "application/json" })
+      res.end(JSON.stringify({ model: "jev-1.13.0", answers: out, usage: { input_tokens: 1, output_tokens: 1 } }))
+    })
+  }).then((srv) => Object.assign(srv, { requests }))
+}
+
+async function withJev(srv, fn) {
+  const saved = { key: process.env.TYPESAFE_API_KEY, url: process.env.TYPESAFE_BASE_URL, backend: process.env.AGENTRY_DECISION_BACKEND }
+  process.env.TYPESAFE_API_KEY = "test-key"
+  process.env.TYPESAFE_BASE_URL = `http://127.0.0.1:${srv.port}/`
+  delete process.env.AGENTRY_DECISION_BACKEND
+  try { await fn() } finally {
+    for (const [name, value] of [["TYPESAFE_API_KEY", saved.key], ["TYPESAFE_BASE_URL", saved.url], ["AGENTRY_DECISION_BACKEND", saved.backend]]) {
+      if (value === undefined) delete process.env[name]; else process.env[name] = value
+    }
+    await srv.close()
+  }
+}
+
+test("decision (Jev): routes on a typed answer with zero model calls; the state defaults to the upstream outputs keyed by id", async () => {
+  const srv = await fakeTypeSafe((state) => jevAnswer(/refund/.test(JSON.stringify(state)) ? "billing" : "technical", 0.8, 2))
+  await withJev(srv, async () => {
+    const { out, cp, runDir, promptOf, client } = await run(workflow({
+      read_mail: agent("NODE=read_mail", { output: { schema: { subject: "string" } } }),
+      triage: decision({ min_confidence: 0.9 }, { input: { from: "read_mail" }, branch_on: "category", routes: [{ to: "billing_desk", when: { equals: "billing" } }, { to: "helpdesk" }] }),
+      billing_desk: agent("NODE=billing_desk"),
+      helpdesk: agent("NODE=helpdesk"),
+    }), (text) => (tag(text) === "read_mail" ? '{"subject":"refund please"}' : "ok"))
+    assert.match(out, /WORKFLOW RUN COMPLETE/)
+    assert.deepEqual([...cp.completed].sort(), ["billing_desk", "read_mail", "triage"])
+    assert.deepEqual(cp.skipped, ["helpdesk"])
+    assert.equal(client.calls.filter((c) => tag(c.text) === "triage").length, 0)
+    assert.equal(srv.requests.length, 1)
+    assert.equal(srv.requests[0].url, "/v1/systemone")
+    assert.equal(srv.requests[0].auth, "Bearer test-key")
+    assert.deepEqual(srv.requests[0].body, {
+      state: { read_mail: { subject: "refund please" } }, model: "jev-latest",
+      questions: {
+        category: { type: "choice", instructions: "Which team", criteria: { billing: "Payments", technical: "Bugs", other: null } },
+        urgent: { type: "noul", instructions: "The message is urgent" },
+        severity: { type: "score", instructions: "How severe", criteria: ["none", "minor", "major", "critical"] },
+      },
+    })
+    assert.deepEqual(outputOf(runDir, "triage"), {
+      category: "billing", category_confidence: 0.85, urgent: true, urgent_p: 0.8, severity: 2, severity_confidence: 1,
+      unsure: ["category", "urgent"], backend: "jev",
+    })
+    assert.match(promptOf("billing_desk"), /"category":"billing"/)
+    assert.match(out, /triage \(decision:jev\)/)
+    assert.match(fs.readFileSync(path.join(runDir, "triage.log.md"), "utf8"), /## Resolved\n### state\nPOST http:\/\/127\.0\.0\.1:\d+\/v1\/systemone/)
+  })
+})
+
+test("decision (Jev, batch): one request per item of for_each, items/counts/unsure in the output; 429 is retried", async () => {
+  let attempts = 0
+  const srv = await fakeTypeSafe((state) => {
+    attempts += 1
+    if (attempts === 1) return 429
+    return jevAnswer(state.id === 2 ? "technical" : "billing", state.id === 3 ? 0.45 : 0.95, state.id)
+  })
+  await withJev(srv, async () => {
+    const { out, runDir, promptOf } = await run(workflow({
+      read_mail: agent("NODE=read_mail", { output: { schema: { emails: "object[]" } } }),
+      review: decision({ for_each: "{read_mail.emails}", state: "ignored in batch mode", min_confidence: 0.6, model: "jev-1.13" }, { input: { from: "read_mail" } }),
+      summarize: agent("NODE=summarize", { input: { from: "review" } }),
+    }), (text) => (tag(text) === "read_mail" ? '{"emails":[{"id":1},{"id":2},{"id":3}]}' : "ok"))
+    assert.match(out, /WORKFLOW RUN COMPLETE/)
+    assert.equal(srv.requests.length, 4) // 3 items + the retried one
+    assert.ok(srv.requests.every((r) => r.body.model === "jev-1.13"))
+    assert.deepEqual([...new Set(srv.requests.map((r) => r.body.state.id))].sort(), [1, 2, 3])
+    const result = outputOf(runDir, "review")
+    assert.deepEqual(result.items.map((i) => [i.index, i.category, i.urgent, i.severity]), [[0, "billing", true, 1], [1, "technical", true, 2], [2, "billing", false, 3]])
+    assert.deepEqual(result.counts, { category: { billing: 2, technical: 1 }, urgent: { true: 2, false: 1 } })
+    assert.deepEqual(result.unsure, [2]) // urgent_p 0.5 → confidence 0
+    assert.equal(result.backend, "jev")
+    assert.match(promptOf("summarize"), /"counts":\{"category":\{"billing":2,"technical":1\}/)
+    assert.match(fs.readFileSync(path.join(runDir, "review.log.md"), "utf8"), /→ 429 \(retry 1\/2\)/)
+  })
+})
+
+test("decision (Jev): a non-retryable error fails the step with status and body; a missing for_each array fails before any request", async () => {
+  const srv = await fakeTypeSafe(() => 422)
+  await withJev(srv, async () => {
+    const failed = await run(workflow({ d: decision({}) }), () => "ok", { input: '{"text":"hi"}' })
+    assert.match(failed.out, /FAILED at "d" \(decision:jev\): POST http:\/\/127\.0\.0\.1:\d+\/v1\/systemone answered 422: \{"error":"status 422"\}/)
+    const shape = await run(workflow({ d: decision({ for_each: "{input.text}" }) }), () => "ok", { input: '{"text":"hi"}' })
+    assert.match(shape.out, /FAILED at "d" \(decision:jev\): decision\.for_each must resolve to a JSON array, got text/)
+    assert.equal(srv.requests.length, 1)
+  })
+})
+
+test("decision (LLM fallback): without a key the fallback agent is asked for probabilities as strict JSON, once per item, and routes the same way", async () => {
+  const saved = process.env.TYPESAFE_API_KEY
+  delete process.env.TYPESAFE_API_KEY
+  try {
+    const { out, cp, runDir, client } = await run(workflow({
+      read_mail: agent("NODE=read_mail", { output: { schema: { subject: "string", emails: "object[]" } } }),
+      triage: decision({ min_confidence: 0.5 }, { input: { from: "read_mail" }, agent_mapping: { opencode: "explore" }, branch_on: "severity", routes: [{ to: "page_oncall", when: { gte: 2 } }, { to: "queue" }] }),
+      page_oncall: agent("NODE=page_oncall"),
+      queue: agent("NODE=queue"),
+      review: decision({ for_each: "{read_mail.emails}" }, { input: { from: "read_mail" } }),
+    }), (text) => {
+      if (tag(text) === "read_mail") return '{"subject":"site down","emails":[{"id":1},{"id":2}]}'
+      if (/Your previous reply was not usable/.test(text)) return '{"category":{"billing":0.1,"technical":0.9},"urgent":0.55,"severity":[0,0,0.2,0.8]}'
+      if (/calibrated classifier/.test(text)) return /STATE:\n\{\n {2}"id": 2\n\}/.test(text) ? "I think so, let me explain…" : '{"category":"technical","urgent":true,"severity":3}'
+      return "ok"
+    })
+    assert.match(out, /WORKFLOW RUN COMPLETE/)
+    assert.deepEqual([...cp.completed].sort(), ["page_oncall", "read_mail", "review", "triage"])
+    assert.deepEqual(cp.skipped, ["queue"])
+    const triage = outputOf(runDir, "triage")
+    assert.deepEqual([triage.category, triage.urgent, triage.severity, triage.unsure, triage.backend], ["technical", true, 3, [], "llm"])
+    assert.equal(triage.category_confidence, 1)
+    const calls = client.calls.filter((c) => /Respond with ONLY a raw JSON object whose keys are exactly: "category", "urgent", "severity"/.test(c.text))
+    assert.equal(calls.length, 4) // triage once, item 1 once, item 2 twice (repair pass)
+    assert.ok(client.sessions.some((s) => s.title === "triage"))
+    assert.ok(client.sessions.some((s) => s.title === "review [1]"))
+    const review = outputOf(runDir, "review")
+    assert.deepEqual(review.items.map((i) => [i.index, i.category, i.urgent]), [[0, "technical", true], [1, "technical", true]])
+    assert.ok(Math.abs(review.items[1].urgent_p - 0.55) < 1e-9)
+    assert.match(out, /triage \(decision:llm\)/)
+  } finally {
+    if (saved !== undefined) process.env.TYPESAFE_API_KEY = saved
+  }
+})
+
 test("dispose closes the panel server and withdraws panel.json", async () => {
   const { dir, hooks } = await run(workflow({ only: agent("NODE=only") }), () => "ok")
   const port = panelPort(dir)

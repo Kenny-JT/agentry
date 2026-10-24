@@ -1,8 +1,8 @@
 import { Handle, Position, useEdges, useNodes } from '@xyflow/react';
 import type { NodeProps } from '@xyflow/react';
 import type { CSSProperties } from 'react';
-import { activeTriggerKinds, checkTriggers, describeTrigger, toolLabel } from '@agentry/core';
-import type { ToolKind, ToolSpec, WorkflowTriggers } from '@agentry/core';
+import { activeTriggerKinds, checkTriggers, describeTrigger, isBatchDecision, toolLabel } from '@agentry/core';
+import type { DecisionSpec, ToolKind, ToolSpec, WorkflowTriggers } from '@agentry/core';
 import { nodeStateLabel } from '@agentry/design';
 import { orthogonalPath } from './backEdge';
 import { DOCUMENTER_FORK, FORK_EXTENSION } from './fork';
@@ -38,6 +38,12 @@ function toolChipValue(tool: ToolSpec | undefined): string {
   const first = (Array.isArray(tool.command) ? tool.command[0] : tool.command.trim().split(/\s+/)[0]) ?? '';
   const program = first.split(/[\\/]/).pop() ?? first;
   return program.length > 16 ? `${program.slice(0, 15)}…` : program || 'script';
+}
+
+/** A decision's chip names the questions it asks, cut to fit. */
+function questionNames(spec: DecisionSpec | undefined): string {
+  const names = Object.keys(spec?.questions ?? {}).join(', ');
+  return names.length > 22 ? `${names.slice(0, 21)}…` : names || '—';
 }
 
 export function ToolGlyph({ kind, size = 11 }: { kind: ToolKind; size?: number }) {
@@ -228,6 +234,11 @@ export function AgentNode({ id, data, selected }: NodeProps<AgentFlowNode>) {
             {definition.tool && <ToolGlyph kind={definition.tool.kind} />}
             <span className="agentry-node__mapping-key">{toolChipKey(definition.tool?.kind)}</span>
             <code className="agentry-node__mapping-val">{toolChipValue(definition.tool)}</code>
+          </div>
+        ) : agentType === 'decision' ? (
+          <div className="agentry-node__mapping" title="Answers typed questions instead of writing text">
+            <span className="agentry-node__mapping-key">{isBatchDecision(definition.decision) ? 'batch' : 'asks'}</span>
+            <code className="agentry-node__mapping-val">{questionNames(definition.decision)}</code>
           </div>
         ) : (
           <div className="agentry-node__mapping">
