@@ -148,9 +148,9 @@ omo finds the tools with `tool_search` (`mcp_agentry_list_workflows`, `mcp_agent
 }
 ```
 
-### Tencent Marvis (untested)
+### Tencent Marvis
 
-工具箱 → 连接 (MCP/CLI) → 我的连接 → 自定义连接: pick a stdio / command connection, command `node`, arguments `<path>/agentry-mcp.mjs --dir <project>`. Marvis does not document its field names; this has not been verified against a real Marvis install.
+工具箱 → 连接 (MCP/CLI) → 我的连接 → 自定义连接: a local command (stdio) connection, command `node`, arguments `<path>/agentry-mcp.mjs --dir <project>`. Tested on Marvis 1.60.30.10; [plugins/marvis](../../plugins/marvis/README.md) has the details.
 
 ## Skill
 
