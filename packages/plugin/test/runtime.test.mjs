@@ -235,6 +235,81 @@ test("a sub-workflow runs its inner graph with full control flow, scoped and off
   assert.deepEqual([...ids].sort(), ["post", "pre", "sub"])
 })
 
+const promptsTo = (client, id) => client.calls.filter((c) => tag(c.text) === id).map((c) => c.text)
+
+test("a loop-back edge re-runs its body with the tail's output as feedback while its condition holds", async () => {
+  let reviews = 0
+  const { out, client } = await run(workflow({
+    writer: agent("NODE=writer", { input: { feedback: { from: "critic", when: { not_contains: "APPROVED" }, max: 3 } } }),
+    critic: agent("NODE=critic", { input: { from: "writer" } }),
+    publish: agent("NODE=publish", { input: { from: "critic" } }),
+  }), (text) => (tag(text) === "critic" ? (++reviews === 1 ? "needs a title" : "APPROVED") : `${tag(text)} v${reviews + 1}`))
+
+  assert.match(out, /WORKFLOW RUN COMPLETE/)
+  const writer = promptsTo(client, "writer")
+  assert.equal(writer.length, 2)
+  assert.doesNotMatch(writer[0], /Feedback from/)
+  assert.match(writer[1], /Feedback from "critic" \(round 2\):\n\nneeds a title/)
+  // what follows the loop runs once, on the round that ended it
+  assert.deepEqual(promptsTo(client, "publish").map((p) => /APPROVED/.test(p)), [true])
+  assert.match(out, /↻ loop back to "writer" ended: condition no longer holds after round 2/)
+})
+
+test("a loop stops after max extra rounds even while its condition still holds", async () => {
+  let reviews = 0
+  const { out, client } = await run(workflow({
+    writer: agent("NODE=writer", { input: { feedback: { from: "critic", when: { not_contains: "APPROVED" }, max: 2 } } }),
+    critic: agent("NODE=critic", { input: { from: "writer" } }),
+  }), (text) => (tag(text) === "critic" ? `rejected, try ${++reviews}` : "draft"))
+  assert.equal(promptsTo(client, "writer").length, 3)
+  assert.match(out, /↻ loop back to "writer" ended: max 2 extra round\(s\) reached/)
+})
+
+test("a loop stops early when its tail says the same thing twice: no progress", async () => {
+  const { out, client } = await run(workflow({
+    writer: agent("NODE=writer", { input: { feedback: { from: "critic", max: 5 } } }),
+    critic: agent("NODE=critic", { input: { from: "writer" } }),
+  }), (text) => (tag(text) === "critic" ? "still too vague" : "draft"))
+  assert.equal(promptsTo(client, "writer").length, 2)
+  assert.match(out, /↻ loop back to "writer" stopped: "critic" produced the same output as the previous round \(no progress\)/)
+})
+
+test("nested loops that would pass the run's execution budget fail the run instead of spinning", async () => {
+  let n = 0
+  const { out, client } = await run(workflow({
+    outer: agent("NODE=outer", { input: { feedback: { from: "check", max: 10 } } }),
+    inner: agent("NODE=inner", { input: { from: "outer", feedback: { from: "review", max: 10 } } }),
+    review: agent("NODE=review", { input: { from: "inner" } }),
+    check: agent("NODE=check", { input: { from: "review" } }),
+  }), (text) => `${tag(text)} ${++n}`) // every output differs, so only the budget can end it
+  assert.match(out, /FAILED: loop budget exceeded/)
+  assert.equal(client.calls.length, 200)
+})
+
+test("resume picks a loop up where it stopped: same round, same feedback", async () => {
+  const loop = workflow({
+    writer: agent("NODE=writer", { input: { feedback: { from: "critic", when: { not_contains: "APPROVED" }, max: 3 } } }),
+    critic: agent("NODE=critic", { input: { from: "writer" } }),
+  })
+  // the provider goes away right after the first review
+  const first = await run(loop, (text) => {
+    if (tag(text) === "critic") return "needs a title"
+    if (/Feedback from/.test(text)) throw new Error("provider down")
+    return "draft"
+  })
+  assert.match(first.out, /FAILED at "writer"/)
+  const runId = fs.readdirSync(path.join(first.dir, ".agentry", "runs"))[0]
+  const saved = JSON.parse(fs.readFileSync(path.join(first.dir, ".agentry", "runs", runId, "checkpoint.json"), "utf8"))
+  assert.deepEqual(saved.loops, { writer: { from: "critic", round: 1, text: "needs a title" } })
+
+  const client = scriptedClient((text) => (tag(text) === "critic" ? "APPROVED" : "titled draft"))
+  const hooks = await plugin.server({ client, directory: first.dir })
+  const out = await hooks.tool.agentry_run.execute({ workflow: path.join(first.dir, "wf.yaml"), resume: runId }, {})
+  assert.match(out, /WORKFLOW RUN COMPLETE/)
+  assert.match(promptsTo(client, "writer")[0], /Feedback from "critic" \(round 2\):\n\nneeds a title/)
+  assert.match(out, /condition no longer holds after round 2/)
+})
+
 test("every bundled workflows/*.yaml runs to completion against a scripted agent", async () => {
   const dir = path.join(repoRoot, "workflows")
   for (const file of fs.readdirSync(dir).filter((f) => f.endsWith(".yaml"))) {

@@ -121,6 +121,24 @@ export interface BranchRoute {
   when?: RouteCondition;
 }
 
+/**
+ * Loop-back edge (PROVISIONAL): placed on the FIRST node of a
+ * loop. After `from` — a node DOWNSTREAM of this one — finishes a round, the
+ * loop body (this node, `from`, and every node on a path between them) runs
+ * again with `from`'s output handed to this node as feedback, while `when`
+ * matches that output (absent = always) and at most `max` extra rounds have
+ * run. A loop-back edge is NOT an execution dependency: this node never waits
+ * for `from`. See {@link ./loops} for the body computation and the limits.
+ */
+export interface FeedbackLoop {
+  /** id of the downstream node whose output feeds back. Must be reachable from this node. */
+  from: string;
+  /** Keep looping while this holds on `from`'s output; omitted = always (runs `max` rounds). */
+  when?: Condition;
+  /** Extra rounds at most, integer 1..10 (default {@link FEEDBACK_DEFAULT_MAX}). */
+  max?: number;
+}
+
 /** A node's inputs: upstream references, reference files, and free-form info. */
 export interface AgentInput {
   /**
@@ -149,6 +167,8 @@ export interface AgentInput {
    * skipped only when every upstream was skipped.
    */
   join?: 'all' | 'any';
+  /** Loop-back edge from a downstream node (one per node); see {@link FeedbackLoop}. */
+  feedback?: FeedbackLoop;
   /** Reference files (requirements / examples): html / png / md, by path. */
   files?: string[];
   /** Non-structured input, to adapt the node to a specific task. */

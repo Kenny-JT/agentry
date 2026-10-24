@@ -11,6 +11,8 @@ import {
   CHECKPOINT_FILE,
   checkRunnable,
   extractJson,
+  FEEDBACK_DEFAULT_MAX,
+  feedbackLoopBody,
   fromList,
   inputSources,
   joinMode,
@@ -19,13 +21,14 @@ import {
   outputFileName,
   pickBranchRoute,
   RUN_DIR_ROOT,
+  RUN_EXECUTION_BUDGET,
   sliceUpstream,
   strictJsonNodes,
   stripJsonFences,
   toolAgentLabel,
   validateWorkflow as lintWorkflow,
 } from "@agentry/core"
-import type { AgentDefinition, Checkpoint, NodeState, SelectFallback, Workflow, WorkflowEvent } from "@agentry/core"
+import type { AgentDefinition, Checkpoint, Condition, LoopCheckpoint, NodeState, SelectFallback, Workflow, WorkflowEvent } from "@agentry/core"
 import { THEMES } from "@agentry/design"
 import { PANEL_TOKENS_CSS } from "./panelTokens"
 import { runTool, ToolError } from "./tools"
@@ -87,6 +90,16 @@ interface DagNode {
   /** Data deps: the upstreams whose output the prompt receives (input.from ∪ branch parents). */
   sources: string[]
   branchParents: string[]
+  /** `input.feedback`, resolved: the loop this node heads. NOT in `upstream` — the head never waits for its tail. */
+  loop?: LoopEdge
+}
+
+interface LoopEdge {
+  from: string
+  when?: Condition
+  max: number
+  /** The head, `from`, and every node on a path between them — what a new round resets. */
+  body: ReadonlySet<string>
 }
 
 function buildDag(wf: Workflow): { nodes: Map<string, DagNode>; order: string[] } {
@@ -101,7 +114,14 @@ function buildDag(wf: Workflow): { nodes: Map<string, DagNode>; order: string[] 
     // condition source must be an execution dep, else the node races its own gate
     const gate = def.trigger?.when?.from
     if (gate && !upstream.includes(gate)) upstream.push(gate)
-    nodes.set(id, { id, def, upstream, sources, branchParents: bp })
+    const node: DagNode = { id, def, upstream, sources, branchParents: bp }
+    const feedback = def.input?.feedback
+    if (feedback) {
+      const body = feedbackLoopBody(wf, id)
+      if (!body) throw new Error(`"${id}" loops back from "${feedback.from}", which is not downstream of it`)
+      node.loop = { from: feedback.from, when: feedback.when, max: feedback.max ?? FEEDBACK_DEFAULT_MAX, body }
+    }
+    nodes.set(id, node)
   }
   // a documenter reports on every other node at run end, so it must run strictly last
   for (const node of nodes.values()) {
@@ -853,12 +873,24 @@ function upstreamContext(def: AgentDefinition, outputs: Map<string, string>, par
   return { parts, notices }
 }
 
+const feedbackSection = (feedback: LoopCheckpoint) =>
+  `Feedback from "${feedback.from}" (round ${feedback.round + 1}):\n\n${feedback.text}`
+
+/** What a node receives besides its upstream context: the run input (entry nodes), a loop's feedback, its own last try. */
+interface PromptExtras {
+  inbound?: { label: string; text: string }
+  feedback?: LoopCheckpoint
+  previousOutput?: string
+  runRecords?: string
+}
+
 function buildPrompt(
-  def: AgentDefinition, outputs: Map<string, string>, previousOutput: string | undefined,
-  parents: readonly string[], runRecords?: string, inbound?: { label: string; text: string },
+  def: AgentDefinition, outputs: Map<string, string>, parents: readonly string[], extras: PromptExtras,
 ): { prompt: string; notices: Array<{ from: string; fallback: SelectFallback }> } {
+  const { inbound, feedback, previousOutput, runRecords } = extras
   let prompt = def.prompt ?? ""
   if (inbound) prompt = `${inbound.label}:\n\n${inbound.text}\n\n---\n\n${prompt}`
+  if (feedback) prompt = `${feedbackSection(feedback)}\n\n---\n\n${prompt}`
   const { parts, notices } = upstreamContext(def, outputs, parents)
   // label the context with the upstream that actually delivered it — after a branch merge
   // (join: any) the first declared source is often the one that was skipped
@@ -954,7 +986,7 @@ function runSubWorkflowBlackBox(nodeId: string, def: AgentDefinition, runDir: st
 // documenter; inner nodes stay off the parent canvas (the sub node is one hexagon there), so
 // their events are dropped except degraded filters and schema warnings, which surface on the
 // sub node. A loop or gate on the sub node itself still re-runs / skips the inner graph whole.
-async function runSubWorkflow(ctx: RunCtx, dagNode: DagNode, iter: number): Promise<NodeResult> {
+async function runSubWorkflow(ctx: RunCtx, dagNode: DagNode, iter: number, feedback?: LoopCheckpoint): Promise<NodeResult> {
   const { id: nodeId, def } = dagNode
   const inner: unknown = def.tech_stack?.workflow
   if (!isObj(inner)) return runSubWorkflowBlackBox(nodeId, def, ctx.runDir, iter)
@@ -964,9 +996,18 @@ async function runSubWorkflow(ctx: RunCtx, dagNode: DagNode, iter: number): Prom
 
   const subDir = path.join(ctx.runDir, nodeId)
   fs.mkdirSync(subDir, { recursive: true })
-  const dag = buildDag(innerWf)
+  let dag: Dag
+  try {
+    dag = buildDag(innerWf)
+  } catch (err) {
+    return { nodeId, agent: "sub-workflow", output: "", ms: 0, schemaWarnings: [], notices: [], iteration: iter, error: `sub-workflow invalid: ${errorMessage(err)}` }
+  }
   const own = upstreamContext(def, ctx.outputs, dagNode.branchParents)
-  const inbound = [...own.parts.map((p) => p.text), ...(def.input?.extra_info ? [`Additional context: ${def.input.extra_info}`] : [])].join("\n\n---\n\n")
+  const inbound = [
+    ...own.parts.map((p) => p.text),
+    ...(feedback ? [feedbackSection(feedback)] : []),
+    ...(def.input?.extra_info ? [`Additional context: ${def.input.extra_info}`] : []),
+  ].join("\n\n---\n\n")
   const innerCtx: RunCtx = {
     ...ctx, runDir: subDir, workflow: innerWf, outputs: new Map(), strict: strictJsonNodes(innerWf), history: [],
     scope: `${ctx.scope}${nodeId}/`, inbound: inbound || undefined, inboundLabel: "Context from the parent workflow", inboundTo: entrySet(innerWf),
@@ -988,6 +1029,7 @@ async function runSubWorkflow(ctx: RunCtx, dagNode: DagNode, iter: number): Prom
   if (outcome.status !== "ok") {
     const error = outcome.status === "failed" ? `sub-workflow "${nodeId}" failed at ${outcome.first.nodeId}: ${outcome.first.error}`
       : outcome.status === "deadlock" ? `sub-workflow "${nodeId}" deadlock (${outcome.stuck} node(s) stuck)`
+      : outcome.status === "budget" ? `sub-workflow "${nodeId}": ${outcome.message}`
       : `sub-workflow "${nodeId}" stopped by user`
     return { nodeId, agent: "sub-workflow", output: "", ms, schemaWarnings, notices, iteration: iter, error }
   }
@@ -1017,10 +1059,13 @@ async function callAgent(client: OpencodeClient, sessionId: string, agent: strin
 
 // A tool node runs no model: resolve its `{ref}`s from the same sources an agent's prompt would
 // receive, run the deterministic executor, and leave the same artifacts an agent node leaves.
-async function runToolNode(ctx: RunCtx, dagNode: DagNode, iter: number): Promise<NodeResult> {
+async function runToolNode(ctx: RunCtx, dagNode: DagNode, iter: number, feedback?: LoopCheckpoint): Promise<NodeResult> {
   const { id: nodeId, def } = dagNode
   const agent = toolAgentLabel(def.tool)
   const t0 = Date.now()
+  // a loop's feedback reaches a tool head as one more `{ref}` source: the tail's output under its own id
+  const sources = feedback ? [...dagNode.sources, feedback.from] : dagNode.sources
+  const outputs = feedback ? new Map([...ctx.outputs, [feedback.from, feedback.text]]) : ctx.outputs
   const fail = (error: string, resolved: string[] = [], notices: string[] = []): NodeResult => {
     const ms = Date.now() - t0
     fs.writeFileSync(path.join(ctx.runDir, logFileName(nodeId)),
@@ -1033,7 +1078,7 @@ async function runToolNode(ctx: RunCtx, dagNode: DagNode, iter: number): Promise
   try {
     const result = await runTool({
       nodeId, spec: def.tool, projectDir: ctx.directory, runDir: ctx.runDir,
-      scope: { sources: dagNode.sources, outputs: ctx.outputs, input: ctx.inbound },
+      scope: { sources, outputs, input: ctx.inbound },
     })
     const ms = Date.now() - t0
     for (const n of result.notices) log("warn", `tool ${ctx.scope}${nodeId}: ${n}`)
@@ -1051,10 +1096,10 @@ async function runToolNode(ctx: RunCtx, dagNode: DagNode, iter: number): Promise
   }
 }
 
-async function runSingleNode(ctx: RunCtx, dagNode: DagNode, iter: number, previousOutput?: string): Promise<NodeResult> {
+async function runSingleNode(ctx: RunCtx, dagNode: DagNode, iter: number, extras: Pick<PromptExtras, "feedback" | "previousOutput">): Promise<NodeResult> {
   const { id: nodeId, def } = dagNode
-  if (def.type === "sub-workflow") return runSubWorkflow(ctx, dagNode, iter)
-  if (def.type === "tool") return runToolNode(ctx, dagNode, iter)
+  if (def.type === "sub-workflow") return runSubWorkflow(ctx, dagNode, iter, extras.feedback)
+  if (def.type === "tool") return runToolNode(ctx, dagNode, iter, extras.feedback)
 
   const mapped = def.agent_mapping?.opencode ?? ""
   let agent: string
@@ -1064,8 +1109,11 @@ async function runSingleNode(ctx: RunCtx, dagNode: DagNode, iter: number, previo
     return { nodeId, agent: mapped || "unknown", output: "", ms: 0, schemaWarnings: [], notices: [], iteration: iter, error: errorMessage(err) }
   }
 
-  const records = def.type === "documenter" ? documenterRecords(ctx, nodeId) : undefined
-  const built = buildPrompt(def, ctx.outputs, previousOutput, dagNode.branchParents, records, inboundFor(ctx, nodeId, def, dagNode.branchParents))
+  const built = buildPrompt(def, ctx.outputs, dagNode.branchParents, {
+    ...extras,
+    inbound: inboundFor(ctx, nodeId, def, dagNode.branchParents),
+    runRecords: def.type === "documenter" ? documenterRecords(ctx, nodeId) : undefined,
+  })
   const prompt = built.prompt
   const notices = built.notices.map((n) => ({ consumer: nodeId, ...n }))
   for (const n of notices) log("warn", `select ${n.from} → ${nodeId}: ${describeFallback(n.fallback)}`)
@@ -1134,13 +1182,19 @@ interface GraphState {
   completedOrder: string[]
   skippedOrder: string[]
   iterations: Record<string, number>
+  /** Per loop head: the round in progress and the feedback that started it (absent = round 1, no feedback yet). */
+  loops: Record<string, LoopCheckpoint>
+  /** Node executions launched so far — the run-wide loop budget. */
+  executions: number
   timings: Array<{ nodeId: string; agent: string; ms: number; iteration?: number }>
   schemaWarnings: string[]
+  /** How each loop ended, for the run summary. */
+  loopNotes: string[]
 }
 
 const newGraphState = (order: readonly string[]): GraphState => ({
   nodeStates: Object.fromEntries(order.map((id) => [id, "pending" as NodeState])),
-  completedOrder: [], skippedOrder: [], iterations: {}, timings: [], schemaWarnings: [],
+  completedOrder: [], skippedOrder: [], iterations: {}, loops: {}, executions: 0, timings: [], schemaWarnings: [], loopNotes: [],
 })
 
 // The only differences between the top-level run and a nested sub-workflow run: the top level
@@ -1155,7 +1209,15 @@ type GraphOutcome =
   | { status: "ok" }
   | { status: "cancelled" }
   | { status: "deadlock"; stuck: number }
+  | { status: "budget"; message: string }
   | { status: "failed"; first: NodeResult }
+
+type LoopExit = "condition" | "max" | "no-progress"
+
+const describeLoopExit = (head: string, loop: LoopEdge, exit: LoopExit, round: number): string =>
+  exit === "max" ? `loop back to "${head}" ended: max ${loop.max} extra round(s) reached`
+  : exit === "no-progress" ? `loop back to "${head}" stopped: "${loop.from}" produced the same output as the previous round (no progress)`
+  : `loop back to "${head}" ended: condition no longer holds after round ${round}`
 
 // The scheduler, shared by the top level and every sub-workflow (D8): waves of ready nodes run in
 // parallel; join, trigger gates, loops and branch routing with skip propagation all apply here.
@@ -1166,6 +1228,7 @@ async function runGraph(ctx: RunCtx, dag: Dag, st: GraphState, hooks: GraphHooks
   const skipped = new Set(st.skippedOrder)
   const settled = new Set([...completed, ...skipped])
   const pending = new Set(dag.order.filter((id) => !settled.has(id)))
+  const hasLoops = [...dag.nodes.values()].some((node) => node.loop !== undefined)
 
   const markSkipped = (id: string, reason: string) => {
     skipped.add(id); settled.add(id); pending.delete(id)
@@ -1185,6 +1248,77 @@ async function runGraph(ctx: RunCtx, dag: Dag, st: GraphState, hooks: GraphHooks
     return ordering.every((d) => settled.has(d)) && (node.sources.length === 0 || node.sources.some((s) => completed.has(s)))
   }
 
+  // Put nodes back to pending as if they had never run this round. A panel "Rerun" forgets
+  // their iteration count too; a loop round keeps it, so the round shows as the iteration.
+  const reset = (toReset: ReadonlySet<string>, keepIterations: boolean) => {
+    for (const id of toReset) {
+      completed.delete(id); skipped.delete(id); settled.delete(id)
+      pending.add(id); ctx.outputs.delete(id)
+      st.nodeStates[id] = "pending"
+      if (!keepIterations) delete st.iterations[id]
+      emit({ type: "node.state", runId, nodeId: id, state: "pending", at: ts() })
+    }
+    const kept = (list: string[]) => list.filter((c) => !toReset.has(c))
+    st.completedOrder.splice(0, st.completedOrder.length, ...kept(st.completedOrder))
+    st.skippedOrder.splice(0, st.skippedOrder.length, ...kept(st.skippedOrder))
+    ctx.history.splice(0, ctx.history.length, ...ctx.history.filter((r) => !toReset.has(r.nodeId)))
+  }
+
+  // A round re-runs the loop body — and re-decides the nodes the body SKIPPED (an untaken port, an
+  // unmet gate) when everything they wait on is re-run too. Nodes that completed outside the
+  // body stay done; a skipped node with a settled upstream outside the body keeps its verdict.
+  const roundResetSet = (body: ReadonlySet<string>): Set<string> => {
+    const toReset = new Set(body)
+    for (let grew = true; grew;) {
+      grew = false
+      for (const id of skipped) {
+        if (toReset.has(id)) continue
+        const node = dag.nodes.get(id)!
+        if (node.upstream.length > 0 && node.upstream.every((dep) => toReset.has(dep))) {
+          toReset.add(id)
+          grew = true
+        }
+      }
+    }
+    return toReset
+  }
+
+  // The loop decision, taken the moment the tail settles and before anything downstream of it is
+  // scheduled: a round starts only while the condition holds, under `max`, and while the tail
+  // still says something new. Returns the heads whose body was reset.
+  const decideLoops = (tail: string, output: string): string[] => {
+    const restarted: string[] = []
+    for (const head of dag.nodes.values()) {
+      const loop = head.loop
+      if (!loop || loop.from !== tail) continue
+      const previous = st.loops[head.id]
+      const round = previous?.round ?? 0
+      const exit: LoopExit | null =
+        loop.when && !matchesCondition(output, loop.when) ? "condition"
+        : round >= loop.max ? "max"
+        : previous && previous.text.trim() === output.trim() ? "no-progress"
+        : null
+      if (exit) {
+        const note = describeLoopExit(head.id, loop, exit, round + 1)
+        st.loopNotes.push(note)
+        emit({ type: "node.output", runId, nodeId: tail, chunk: `↻ ${note}`, at: ts() })
+        log(exit === "no-progress" ? "warn" : "info", `${ctx.scope}${note}`)
+        // a loop inside a loop starts over each outer round
+        delete st.loops[head.id]
+        continue
+      }
+      st.loops[head.id] = { from: tail, round: round + 1, text: output }
+      // a loop inside this one starts over too — its head was just reset
+      for (const inner of dag.nodes.values()) if (inner.id !== head.id && inner.loop && loop.body.has(inner.id)) delete st.loops[inner.id]
+      reset(roundResetSet(loop.body), true)
+      restarted.push(head.id)
+      const note = `looping back to "${head.id}" (round ${round + 2}, max ${loop.max} extra)`
+      emit({ type: "node.output", runId, nodeId: tail, chunk: `↻ ${note}`, at: ts() })
+      log("info", `${ctx.scope}${note}`)
+    }
+    return restarted
+  }
+
   while (pending.size > 0) {
     if (abortFlag) {
       hooks.persist()
@@ -1194,17 +1328,7 @@ async function runGraph(ctx: RunCtx, dag: Dag, st: GraphState, hooks: GraphHooks
     const target = hooks.takeRerun()
     if (target && dag.nodes.has(target)) {
       const toReset = new Set([target, ...findDownstream(target, dag)])
-      for (const id of toReset) {
-        completed.delete(id); skipped.delete(id); settled.delete(id)
-        pending.add(id); ctx.outputs.delete(id)
-        st.nodeStates[id] = "pending"
-        delete st.iterations[id]
-        emit({ type: "node.state", runId, nodeId: id, state: "pending", at: ts() })
-      }
-      const kept = (list: string[]) => list.filter((c) => !toReset.has(c))
-      st.completedOrder.splice(0, st.completedOrder.length, ...kept(st.completedOrder))
-      st.skippedOrder.splice(0, st.skippedOrder.length, ...kept(st.skippedOrder))
-      ctx.history.splice(0, ctx.history.length, ...ctx.history.filter((r) => !toReset.has(r.nodeId)))
+      reset(toReset, false)
       hooks.persist()
       log("info", `rerun: reset ${[...toReset].join(", ")}`)
       continue
@@ -1233,6 +1357,20 @@ async function runGraph(ctx: RunCtx, dag: Dag, st: GraphState, hooks: GraphHooks
       continue
     }
 
+    // Loop-back edges can only end through their own limits, so a run that has any is also
+    // capped as a whole: past the budget it fails instead of spinning (nested loops multiply).
+    if (hasLoops && st.executions + toRun.length > RUN_EXECUTION_BUDGET) {
+      const message = `loop budget exceeded: ${st.executions} node executions so far, ${toRun.length} more would pass the limit of ${RUN_EXECUTION_BUDGET}`
+      for (const id of toRun) {
+        st.nodeStates[id] = "failed"
+        emit({ type: "node.state", runId, nodeId: id, state: "failed", at: ts() })
+      }
+      hooks.persist()
+      log("error", `${ctx.scope}${message}`)
+      return { status: "budget", message }
+    }
+    st.executions += toRun.length
+
     for (const id of toRun) {
       const a = nodeAgentLabel(dag.nodes.get(id)!.def)
       const iter = (st.iterations[id] ?? 0) + 1
@@ -1248,8 +1386,8 @@ async function runGraph(ctx: RunCtx, dag: Dag, st: GraphState, hooks: GraphHooks
     const wave = await Promise.allSettled(
       toRun.map((id) => {
         const iter = (st.iterations[id] ?? 0) + 1
-        const prevOut = st.iterations[id] ? ctx.outputs.get(id) : undefined
-        return runSingleNode(ctx, dag.nodes.get(id)!, iter, prevOut)
+        // a node's last output survives only a trigger.loop re-queue; a loop round or a rerun clears it
+        return runSingleNode(ctx, dag.nodes.get(id)!, iter, { previousOutput: ctx.outputs.get(id), feedback: st.loops[id] })
       })
     )
 
@@ -1295,7 +1433,10 @@ async function runGraph(ctx: RunCtx, dag: Dag, st: GraphState, hooks: GraphHooks
         emit({ type: "node.state", runId, nodeId: r.nodeId, state: "done", ms: r.ms, iteration: iter, at: ts() })
         log("info", `node.state ${ctx.scope}${r.nodeId} done (${r.ms}ms, iter ${iter})`)
 
-        if (def.type === "branch" && def.branch_on) {
+        if (decideLoops(r.nodeId, r.output).length > 0) {
+          // a new round took the tail back to pending: its port decision belongs to the next round
+          doneThisWave.splice(doneThisWave.indexOf(r.nodeId), 1)
+        } else if (def.type === "branch" && def.branch_on) {
           // D16: exactly one port — the first matching route in routes[] order, else the default
           const value = extractJson(r.output)?.[def.branch_on]
           const routes = def.routes ?? []
@@ -1388,10 +1529,14 @@ async function runWorkflow(client: OpencodeClient, directory: string, wf: Workfl
 
   const prior = resumeRunId ? loadCheckpoint(runDir) : null
   const st: GraphState = prior
-    ? { ...newGraphState(dag.order), nodeStates: prior.nodes, completedOrder: [...prior.completed], skippedOrder: [...(prior.skipped ?? [])], iterations: { ...(prior.iterations ?? {}) } }
+    ? {
+      ...newGraphState(dag.order), nodeStates: prior.nodes, completedOrder: [...prior.completed], skippedOrder: [...(prior.skipped ?? [])],
+      iterations: { ...(prior.iterations ?? {}) }, loops: { ...(prior.loops ?? {}) }, executions: prior.executions ?? 0,
+    }
     : newGraphState(dag.order)
   const persist = () => saveCheckpoint(runDir, {
-    runId, workflow: wf.introduction, nodes: st.nodeStates, completed: st.completedOrder, skipped: st.skippedOrder, iterations: st.iterations, updatedAt: ts(),
+    runId, workflow: wf.introduction, nodes: st.nodeStates, completed: st.completedOrder, skipped: st.skippedOrder, iterations: st.iterations,
+    ...(Object.keys(st.loops).length ? { loops: st.loops } : {}), ...(st.executions ? { executions: st.executions } : {}), updatedAt: ts(),
   })
   if (!prior) persist()
 
@@ -1460,6 +1605,10 @@ async function runWorkflow(client: OpencodeClient, directory: string, wf: Workfl
     emitPanel({ type: "run.finished", runId, status: "error", at: ts() })
     return `Run ${runId} DEADLOCK: ${outcome.stuck} node(s) stuck — check for circular dependencies.`
   }
+  if (outcome.status === "budget") {
+    emitPanel({ type: "run.finished", runId, status: "error", at: ts() })
+    return `Run ${runId} FAILED: ${outcome.message}. Lower the loops' max rounds or give them a condition that ends them.`
+  }
   if (outcome.status === "failed") {
     emitPanel({ type: "run.finished", runId, status: "error", at: ts() })
     return `Run ${runId} FAILED at "${outcome.first.nodeId}" (${outcome.first.agent}): ${outcome.first.error}`
@@ -1488,6 +1637,7 @@ async function runWorkflow(client: OpencodeClient, directory: string, wf: Workfl
     ...(st.schemaWarnings.length > 0 ? ["", "-- Schema warnings --", ...st.schemaWarnings.map((w) => `  ⚠ ${w}`)] : []),
     ...(lint.length > 0 ? ["", "-- Workflow lint --", ...lint.map((issue) => `  ${issue.severity === "error" ? "✖" : "⚠"} ${issue.message}`)] : []),
     ...(Object.values(st.iterations).some((v) => v > 1) ? ["", "-- Loop iterations --", ...Object.entries(st.iterations).filter(([, v]) => v > 1).map(([k, v]) => `  ${k}: ${v} iterations`)] : []),
+    ...(st.loopNotes.length > 0 ? ["", "-- Loops --", ...st.loopNotes.map((note) => `  ↻ ${note}`)] : []),
     "", "-- Artifacts --",
     ...dag.order.filter((id) => completed.has(id)).map((id) => `  ${outputFileName(id)}  ${logFileName(id)}`),
     ...(documenter ? [`  ${REPORT_FILE}`] : []),

@@ -4,6 +4,10 @@ Notable changes to Agentry. The format follows [Keep a Changelog](https://keepac
 
 ## [Unreleased]
 
+### Added
+
+- Feedback loops: `input.feedback: { from, when, max }` sends a later step's output back to an earlier step and runs the steps in between again while that output still matches `when`, for at most `max` extra rounds (default 3, up to 10). A loop also ends when its output repeats, a run fails before it would pass 200 step runs, and the run summary says why each loop ended. The editor draws loop-back edges and edits their limits.
+
 ### Fixed
 
 - The opencode plugin loads and runs on opencode 2 (checked on 2.1.2) and keeps working on opencode 1. On opencode 2, which gives plugins no log, progress goes to `.agentry/agentry.log`.

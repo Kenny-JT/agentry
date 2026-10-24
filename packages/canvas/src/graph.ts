@@ -114,17 +114,19 @@ function boundaryIO(
 function edgesFromWorkflow(workflow: Workflow, ids: string[]): WorkflowEdge[] {
   const edges: WorkflowEdge[] = [];
   const seen = new Set<string>();
-  const push = (source: string, target: string) => {
+  const push = (source: string, target: string, loop = false) => {
     if (!workflow.agents[source] || !workflow.agents[target]) return;
     const id = edgeId(source, target);
     if (seen.has(id)) return;
     seen.add(id);
-    edges.push({ id, source, target, type: 'orthogonal' });
+    edges.push({ id, source, target, type: 'orthogonal', ...(loop ? { data: { loop: true } } : {}) });
   };
   for (const id of ids) {
     const def = workflow.agents[id];
     if (!def) continue;
     for (const from of fromList(def.input?.from)) push(from, id);
+    const loopFrom = def.input?.feedback?.from;
+    if (loopFrom) push(loopFrom, id, true);
     if (def.type === 'branch' && def.routes) {
       for (const route of def.routes) push(id, route.to);
     }
@@ -138,7 +140,8 @@ export function workflowToGraph(workflow: Workflow, layout: Partial<LayoutOption
 
   const edges = edgesFromWorkflow(workflow, ids);
 
-  const depthOf = buildDepths(ids, edges);
+  // a loop-back edge points at an earlier column; laying it out as a dependency would fold the loop
+  const depthOf = buildDepths(ids, edges.filter((edge) => edge.data?.loop !== true));
   // A documenter has no wired inputs but runs after everything: lay it out in the last column
   // (under the sinks) instead of column 0, where "no inputs" would otherwise put it.
   const isDocumenter = (id: string) => workflow.agents[id]?.type === 'documenter';
@@ -238,7 +241,10 @@ export function graphToWorkflow(
   nodes: AgentFlowNode[],
   edges: WorkflowEdge[],
 ): Workflow {
-  const order = topoOrder(nodes, edges);
+  const loops = loopEdgeIds(nodes, edges);
+  const forward = edges.filter((edge) => !loops.has(edge.id));
+  const loopFrom = new Map(edges.filter((edge) => loops.has(edge.id)).map((edge) => [edge.target, edge.source]));
+  const order = topoOrder(nodes, forward);
   const byId = new Map(nodes.map((node) => [node.id, node]));
   const isBranch = (id: string): boolean => byId.get(id)?.data.definition.type === 'branch';
 
@@ -249,7 +255,7 @@ export function graphToWorkflow(
   // branch parents included (the runner slices branch-fed context too) — only
   // boundary pseudo-nodes are out, they never exist in `agents{}`.
   const selectSources = new Map<string, Set<string>>();
-  for (const edge of edges) {
+  for (const edge of forward) {
     if (!byId.has(edge.source) || !byId.has(edge.target)) continue;
     if (isBoundaryId(edge.source)) continue;
     const selectable = selectSources.get(edge.target) ?? new Set<string>();
@@ -267,8 +273,8 @@ export function graphToWorkflow(
     const node = byId.get(id);
     if (!node) continue;
     const def = node.data.definition;
-    const input = mergeInput(def, sources.get(id), selectSources.get(id));
-    const branch = def.type === 'branch' ? branchFields(id, def, edges, byId) : undefined;
+    const input = mergeInput(def, sources.get(id), selectSources.get(id), loopFrom.get(id));
+    const branch = def.type === 'branch' ? branchFields(id, def, forward, byId) : undefined;
     const isSub = def.type === 'sub-workflow';
     const isTool = def.type === 'tool';
     agents[id] = {
@@ -355,6 +361,58 @@ function cleanRoute(when: BranchRoute['when'] | undefined): BranchRoute['when'] 
   return Object.keys(next).length ? next : undefined;
 }
 
+/**
+ * LOOP-BACK EDGES. An edge leading back to a node it depends on closes a loop. It is saved
+ * as that node's `input.feedback` — never `input.from`, a cycle no runner can start — and
+ * stays out of ordering, layout, branch routes and `select`. Imported feedback edges carry
+ * `data.loop`; a drawn edge counts when it runs right-to-left and closes a cycle over the
+ * edges kept so far. One per node: a second edge back into the same node stays an ordinary
+ * input, so validation reports its cycle instead of the canvas dropping it.
+ */
+export function loopEdgeIds(nodes: readonly AgentFlowNode[], edges: readonly WorkflowEdge[]): Set<string> {
+  const x = new Map(nodes.map((node) => [node.id, node.position.x]));
+  const forward = new Map<string, string[]>();
+  const keep = (edge: WorkflowEdge) => forward.set(edge.source, [...(forward.get(edge.source) ?? []), edge.target]);
+  const reaches = (from: string, to: string): boolean => {
+    const seen = new Set([from]);
+    for (const queue = [from]; queue.length > 0;) {
+      const id = queue.shift() as string;
+      if (id === to) return true;
+      for (const next of forward.get(id) ?? []) {
+        if (!seen.has(next)) {
+          seen.add(next);
+          queue.push(next);
+        }
+      }
+    }
+    return false;
+  };
+  const loops = new Set<string>();
+  const heads = new Set<string>();
+  const backward: WorkflowEdge[] = [];
+  for (const edge of edges) {
+    if (isBoundaryId(edge.source) || isBoundaryId(edge.target)) continue;
+    if (edge.data?.loop === true && !heads.has(edge.target)) {
+      loops.add(edge.id);
+      heads.add(edge.target);
+    } else if (edge.data?.loop !== true && (x.get(edge.source) ?? 0) >= (x.get(edge.target) ?? 0)) {
+      backward.push(edge);
+    } else {
+      keep(edge);
+    }
+  }
+  // ordinary edges are all in first, so only a right-to-left edge can be the one closing a cycle
+  for (const edge of backward) {
+    if (!heads.has(edge.target) && reaches(edge.target, edge.source)) {
+      loops.add(edge.id);
+      heads.add(edge.target);
+    } else {
+      keep(edge);
+    }
+  }
+  return loops;
+}
+
 /** Kahn topological sort; on a cycle, leftover nodes keep their array order. */
 export function topoOrder(nodes: AgentFlowNode[], edges: WorkflowEdge[]): string[] {
   const ids = nodes.map((node) => node.id);
@@ -393,6 +451,7 @@ function mergeInput(
   def: AgentDefinition,
   sources: string[] | undefined,
   selectable: ReadonlySet<string> | undefined,
+  loopFrom: string | undefined,
 ): AgentInput | undefined {
   const base = def.input ?? {};
   const next: AgentInput = {};
@@ -405,6 +464,11 @@ function mergeInput(
     if (entries.length) next.select = Object.fromEntries(entries);
   }
   if (base.join !== undefined) next.join = base.join;
+  // the edge says where the loop comes back from; its condition and limit live on the node
+  if (loopFrom) {
+    const { when, max } = base.feedback ?? {};
+    next.feedback = { from: loopFrom, ...(when ? { when } : {}), ...(max !== undefined ? { max } : {}) };
+  }
   if (base.files && base.files.length) next.files = base.files;
   if (base.extra_info !== undefined) next.extra_info = base.extra_info;
   return Object.keys(next).length ? next : undefined;

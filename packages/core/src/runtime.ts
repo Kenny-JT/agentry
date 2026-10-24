@@ -17,6 +17,14 @@ import type { AgentDefinition, BranchRoute, Condition, RouteCondition, Workflow 
 export const fromList = (from: string | string[] | undefined): string[] =>
   from === undefined ? [] : Array.isArray(from) ? from : [from];
 
+/** Extra rounds a loop-back edge runs when `input.feedback.max` is omitted. */
+export const FEEDBACK_DEFAULT_MAX = 3;
+/** Upper bound for `input.feedback.max`. */
+export const FEEDBACK_MAX_LIMIT = 10;
+
+export const isValidFeedbackMax = (max: unknown): max is number =>
+  typeof max === 'number' && Number.isInteger(max) && max >= 1 && max <= FEEDBACK_MAX_LIMIT;
+
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 
@@ -237,6 +245,18 @@ export function checkRunnable(raw: unknown): RunnableCheck {
     }
     if (input?.join !== undefined && input.join !== 'all' && input.join !== 'any') {
       errors.push(`agents.${id}.input.join: expected "all" or "any", got ${JSON.stringify(input.join)}`);
+    }
+    if (input?.feedback !== undefined) {
+      const feedback = input.feedback;
+      if (!isRecord(feedback)) errors.push(`agents.${id}.input.feedback: expected object`);
+      else {
+        if (typeof feedback.from !== 'string') errors.push(`agents.${id}.input.feedback.from: required string`);
+        else if (!ids.has(feedback.from)) errors.push(`agents.${id}.input.feedback.from: references unknown agent "${feedback.from}"`);
+        if (feedback.when !== undefined && !isRecord(feedback.when)) errors.push(`agents.${id}.input.feedback.when: expected object`);
+        if (feedback.max !== undefined && !isValidFeedbackMax(feedback.max)) {
+          errors.push(`agents.${id}.input.feedback.max: expected an integer from 1 to ${FEEDBACK_MAX_LIMIT}`);
+        }
+      }
     }
     if (input?.select !== undefined) {
       if (!isRecord(input.select)) errors.push(`agents.${id}.input.select: expected an object of upstream id -> field list`);

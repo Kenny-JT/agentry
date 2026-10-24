@@ -5,7 +5,8 @@
  * plugin can run the exact same rules.
  */
 
-import { branchParents, inputSources, joinMode } from './runtime';
+import { dependencyGraph, feedbackLoopBody, findCycles } from './loops';
+import { branchParents, FEEDBACK_MAX_LIMIT, inputSources, isValidFeedbackMax, joinMode } from './runtime';
 import { checkToolSpec, templateRefs, toolTemplateFields } from './tool';
 import { checkTriggers } from './triggers';
 import type { AgentDefinition, Workflow } from './workflow';
@@ -49,6 +50,26 @@ function toolIssues(id: string, def: AgentDefinition, sources: readonly string[]
   return issues;
 }
 
+/** A node's `input.feedback` block: it must close a loop, and it should have a way out. */
+function feedbackIssues(id: string, workflow: Pick<Workflow, 'agents'>): ValidationIssue[] {
+  const feedback = workflow.agents[id]?.input?.feedback;
+  if (!feedback) return [];
+  const issues: ValidationIssue[] = [];
+  const from = feedback.from;
+  if (!workflow.agents[from]) {
+    issues.push({ severity: 'error', code: 'feedback-unknown', nodeId: id, field: from, message: `"${id}" loops back from "${from}", which is not a node in this workflow.` });
+  } else if (!feedbackLoopBody(workflow, id)) {
+    issues.push({ severity: 'error', code: 'feedback-not-loop', nodeId: id, field: from, message: `"${id}" loops back from "${from}", but "${from}" is not downstream of "${id}" — a loop-back edge must return from a node this one leads to.` });
+  }
+  if (feedback.max !== undefined && !isValidFeedbackMax(feedback.max)) {
+    issues.push({ severity: 'error', code: 'feedback-max', nodeId: id, field: 'max', message: `"${id}" loops back with max ${JSON.stringify(feedback.max)}; expected a whole number from 1 to ${FEEDBACK_MAX_LIMIT}.` });
+  }
+  if (!feedback.when || Object.keys(feedback.when).length === 0) {
+    issues.push({ severity: 'warning', code: 'loop-no-exit', nodeId: id, message: `"${id}" loops back from "${from}" without a condition, so it always runs the full ${feedback.max ?? 'default'} extra rounds.` });
+  }
+  return issues;
+}
+
 export function validateWorkflow(workflow: Workflow): ValidationIssue[] {
   const issues: ValidationIssue[] = [];
   const agents = workflow.agents ?? {};
@@ -60,11 +81,28 @@ export function validateWorkflow(workflow: Workflow): ValidationIssue[] {
   const consumed = new Set<string>();
   const fed = new Set<string>();
 
+  for (const cycle of findCycles(dependencyGraph({ agents }))) {
+    const path = [...cycle, cycle[0]].map((node) => `"${node}"`).join(' → ');
+    issues.push({
+      severity: 'error',
+      code: 'cycle',
+      nodeId: cycle[0],
+      message: `${path} is a cycle: every node waits for the one before it, so none can start. Turn one edge into a loop-back edge (input.feedback) to repeat these steps.`,
+    });
+  }
+
   for (const id of ids) {
     const def = agents[id];
     if (!def) continue;
 
     if (def.type === 'tool') issues.push(...toolIssues(id, def, inputSources(def, parents.get(id) ?? [])));
+
+    const feedback = feedbackIssues(id, { agents });
+    issues.push(...feedback);
+    if (def.input?.feedback && !feedback.some((issue) => issue.severity === 'error')) {
+      consumed.add(def.input.feedback.from);
+      fed.add(id);
+    }
 
     for (const from of asList(def.input?.from)) {
       if (has(from)) {

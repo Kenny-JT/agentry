@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { TriggerIcon, WORKFLOW_INPUT_ID } from '@agentry/canvas';
 import type { AgentFlowNode } from '@agentry/canvas';
-import { activeTriggerKinds, asPatternList, checkTriggers, TRIGGER_DEFAULTS, TRIGGER_KINDS } from '@agentry/core';
+import { activeTriggerKinds, asPatternList, checkTriggers, FEEDBACK_DEFAULT_MAX, FEEDBACK_MAX_LIMIT, TRIGGER_DEFAULTS, TRIGGER_KINDS } from '@agentry/core';
 import type {
   AgentDefinition,
   AgentInput,
@@ -9,6 +9,7 @@ import type {
   AgentType,
   BranchRoute,
   Condition,
+  FeedbackLoop,
   FileTrigger,
   GitTrigger,
   MailTrigger,
@@ -87,6 +88,11 @@ function cleanInput(input: AgentInput | undefined): AgentInput | undefined {
   // Inspector edit never silently drops the per-edge field filters.
   if (input.select && Object.keys(input.select).length) next.select = input.select;
   if (input.join === 'any' || input.join === 'all') next.join = input.join;
+  if (input.feedback?.from) {
+    const when = cleanCondition(input.feedback.when);
+    const { max } = input.feedback;
+    next.feedback = { from: input.feedback.from, ...(when ? { when } : {}), ...(max !== undefined ? { max } : {}) };
+  }
   const files = dropEmpty(input.files);
   if (files) next.files = files;
   if (input.extra_info && input.extra_info.trim()) next.extra_info = input.extra_info;
@@ -199,6 +205,8 @@ function cleanDefinition(def: AgentDefinition): AgentDefinition {
 export interface InspectorProps {
   node: AgentFlowNode | null;
   incoming: IncomingSource[];
+  /** Source of the loop-back edge into this node, if one closes a loop here. */
+  loopFrom?: string;
   outgoingTo: string[];
   embeddable: EmbeddableWorkflow[];
   existingIds: string[];
@@ -221,6 +229,7 @@ type HeadActionsProps = Pick<InspectorProps, 'placement' | 'onTogglePlacement' |
 export function Inspector({
   node,
   incoming,
+  loopFrom,
   outgoingTo,
   embeddable,
   existingIds,
@@ -245,6 +254,7 @@ export function Inspector({
           key={node.id}
           node={node}
           incoming={incoming}
+          loopFrom={loopFrom}
           outgoingTo={outgoingTo}
           embeddable={embeddable}
           existingIds={existingIds}
@@ -310,6 +320,7 @@ function DockSash({ width, onResize }: { width: number; onResize: (width: number
 function InspectorForm({
   node,
   incoming,
+  loopFrom,
   outgoingTo,
   embeddable,
   existingIds,
@@ -372,6 +383,11 @@ function InspectorForm({
     order[index] = b;
     order[index + delta] = a;
     writeRoutes(order);
+  };
+
+  const feedback = def.input?.feedback;
+  const setFeedback = (patch: Partial<FeedbackLoop>) => {
+    if (loopFrom) setField({ input: { ...def.input, feedback: { ...feedback, ...patch, from: loopFrom } } });
   };
 
   const fanIn = incoming.filter((source) => source.id !== WORKFLOW_INPUT_ID).length;
@@ -619,6 +635,30 @@ function InspectorForm({
                   : 'Waits for all of them. If a branch skips one, this node is skipped too — merging a branch\u2019s alternative paths needs “any”.'}
               </span>
             </label>
+          )}
+
+          {loopFrom && (
+            <div className="agentry-field">
+              <span className="agentry-field__label">Loops back from {loopFrom}</span>
+              <span className="agentry-field__hint">
+                When “{loopFrom}” finishes, this node and every step between them run again, with its output as feedback.
+                A loop also stops when “{loopFrom}” says the same thing twice in a row.
+              </span>
+              <label className="agentry-field">
+                <span className="agentry-field__label">Extra rounds at most</span>
+                <input
+                  className="agentry-input"
+                  type="number"
+                  min={1}
+                  max={FEEDBACK_MAX_LIMIT}
+                  value={feedback?.max ?? FEEDBACK_DEFAULT_MAX}
+                  onChange={(event) => setFeedback({ max: Math.trunc(Number(event.target.value)) })}
+                />
+              </label>
+              <span className="agentry-field__label">Loop again while its output</span>
+              <ConditionEditor condition={feedback?.when} onChange={(when) => setFeedback({ when })} />
+              <span className="agentry-field__hint">Leave all three empty to always run every round.</span>
+            </div>
           )}
 
           <label className="agentry-field">
