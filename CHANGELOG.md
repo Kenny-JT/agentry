@@ -10,12 +10,14 @@ Notable changes to Agentry. The format follows [Keep a Changelog](https://keepac
 - Decision steps (`type: decision`) answer typed questions (`choice`, `yes_no`, `score`) about the upstream outputs and can route on the answers the way a branch does. With `TYPESAFE_API_KEY` set, TypeSafe's Jev answers with calibrated probabilities; without it, the step's opencode agent is asked for the same probabilities. `for_each` asks the same questions about every item of a list. The editor adds and edits decision steps.
 - Eight workflow templates in `workflows/templates` (review your changes, fix a bug, add tests, research a question, draft release notes, triage GitHub issues, explain a codebase, turn notes into action items) and a Templates view in the editor that opens one as a new workflow.
 - An AI chat beside the canvas: describe a change, and a local opencode server (opencode 1 or 2) answers with a complete workflow. The proposal shows the steps and connections it adds, removes or changes, its validation problems and the YAML; Apply puts it on the canvas and Undo puts the previous workflow back.
+- `agentry-mcp` runs workflows on Claude Code or Codex as well as opencode. `run_workflow` takes `runtime` (`opencode`, `claude`, `codex` or `auto`); on Claude Code and Codex each model step is one headless `claude -p` or `codex exec` on your own account, and read-only roles run read-only. `auto` follows `AGENTRY_RUNTIME`, keeps a project that has the opencode plugin on opencode, and otherwise uses the CLI of the MCP client that connected. `agentry-mcp run <workflow>` runs one from a terminal, and in the editor a step can name a Claude Code agent and a Codex profile.
 
 ### Fixed
 
 - The opencode plugin loads and runs on opencode 2 (checked on 2.1.2) and keeps working on opencode 1. On opencode 2, which gives plugins no log, progress goes to `.agentry/agentry.log`.
 - `agentry-watch` and `agentry-mcp` wake projects on opencode 2 servers, and a server that wants a password says to start it with `OPENCODE_SERVER_PASSWORD`.
 - `agentry-watch` and `run_workflow` wait up to 5 minutes for a project's first start, while opencode installs the plugin's dependency, and a timeout says what was happening.
+- A model step that fails writes its log with the reason, as tool steps do, and `get_run` reports the error for that step.
 
 ## [0.1.0] - 2026-10-16
 
