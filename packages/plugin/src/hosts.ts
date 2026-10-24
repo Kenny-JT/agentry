@@ -1,6 +1,6 @@
 // Host adapters: the slice of the opencode SDK client the runner uses, satisfied by a
-// headless CLI instead of a server. One `session.prompt` = one `claude -p` / `codex exec`
-// process on the user's own account; the prompt travels on stdin (Windows caps the command
+// headless CLI instead of a server. One `session.prompt` = one `claude -p` / `codex exec` /
+// `omo -p` process on the user's own account; the prompt travels on stdin (Windows caps the command
 // line at 32 KB, and upstream context easily exceeds that).
 import { spawn } from "node:child_process"
 import * as fs from "node:fs"
@@ -126,6 +126,8 @@ interface HostSpec {
   runtime: HostRuntime
   defaultBin: string
   binEnv: string
+  /** The environment the CLI starts with, when it must differ from this process's. */
+  childEnv?(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv
   invocation(body: HostPromptBody, prompt: string, ctx: { directory: string; env: NodeJS.ProcessEnv; outFile: string }): { args: string[]; stdin: string }
   parse(outcome: SpawnOutcome, outFile: string): HostResult
 }
@@ -196,13 +198,82 @@ export const codexSpec: HostSpec = {
   },
 }
 
-export const HOST_SPECS: Readonly<Record<HostRuntime, HostSpec>> = { claude_code: claudeSpec, codex: codexSpec }
+/** omo's tools that change nothing: all a read-only step gets. */
+const OMO_READ_TOOLS = ["read", "grep", "find", "ls", "web_search", "webfetch"]
+
+/**
+ * What any other step gets: the read tools plus editing and a shell. The rest of what omo loads
+ * (goals, todos, session titles, subagents, the code-mode eval) belongs to an interactive session
+ * and only gets in a single step's way.
+ */
+const OMO_WRITE_TOOLS = [...OMO_READ_TOOLS, "edit", "write", "bash", ...(process.platform === "win32" ? ["powershell"] : [])]
+
+/** Variables that tie a process to the omo session it was started from: a step must not report into, or retitle, its caller's session. */
+const OMO_CALLER_ENV = /^PI_(SESSION_|GOAL_)|^PI_(MODEL|PROVIDER|REASONING_LEVEL)$/
+
+export const omoSpec: HostSpec = {
+  runtime: "omo",
+  defaultBin: "omo",
+  binEnv: "AGENTRY_OMO_BIN",
+  childEnv: (env) => Object.fromEntries(Object.entries(env).filter(([key]) => !OMO_CALLER_ENV.test(key))),
+  invocation(body, prompt, { env }) {
+    // One turn, one JSON event per line, no session file. -nc / -na: no AGENTS.md and no project-local
+    // .omo files, so a project's own .omo/mcp.json (often this very server) does not start inside every
+    // step; the other switches drop the skills, prompt templates and rules of an interactive session,
+    // which are most of omo's prompt.
+    const args = [
+      "-p", "--mode", "json", "--no-session", "-nc", "-na", "-ns", "-np", "--no-ask-user",
+      "--omo-senpi-disabled", "--pi-rules-disabled", "--no-nested-agents", "--ttsr-disabled",
+      "--tools", (body.readOnly ? OMO_READ_TOOLS : OMO_WRITE_TOOLS).join(","),
+    ]
+    const model = body.agent || env.AGENTRY_OMO_MODEL
+    if (model) args.push("--model", model)
+    args.push("-")
+    return { args, stdin: prompt }
+  },
+  parse(outcome) {
+    const events = outcome.stdout.split(/\r?\n/).flatMap((line) => {
+      if (!line.trimStart().startsWith("{")) return []
+      try {
+        const event = asRecord(JSON.parse(line))
+        return event ? [event] : []
+      } catch {
+        return []
+      }
+    })
+    // the answer is the last assistant message; the ones before it are turns that ended in tool calls
+    const replies = events
+      .filter((event) => event.type === "message_end")
+      .map((event) => asRecord(event.message))
+      .filter((message): message is Record<string, unknown> => message?.role === "assistant")
+    const last = replies[replies.length - 1]
+    if (!last) {
+      throw new Error(`omo ${outcome.code === 0 ? "printed no reply" : `exited with ${outcome.code ?? "signal"}`}: ${clipForError(outcome.stderr || outcome.stdout) || "(no output)"}`)
+    }
+    if (last.stopReason === "error" || last.stopReason === "aborted") {
+      // a refused turn (usage limit, no account) ends on an assistant message that carries the reason
+      const reason = typeof last.errorMessage === "string" ? last.errorMessage : ""
+      throw new Error(`omo reported an error: ${clipForError(reason || outcome.stderr) || "(no detail)"}`)
+    }
+    const text = (Array.isArray(last.content) ? last.content : [])
+      .map(asRecord)
+      .filter((part): part is Record<string, unknown> => part?.type === "text" && typeof part.text === "string")
+      .map((part) => part.text as string)
+      .join("")
+    if (outcome.code !== 0) throw new Error(`omo exited with ${outcome.code ?? "signal"}: ${clipForError(outcome.stderr || text) || "(no output)"}`)
+    const session = events.find((event) => event.type === "session")
+    return { text, ...(typeof session?.id === "string" ? { sessionId: session.id } : {}) }
+  },
+}
+
+export const HOST_SPECS: Readonly<Record<HostRuntime, HostSpec>> = { claude_code: claudeSpec, codex: codexSpec, omo: omoSpec }
 
 /** The CLI invocation for one prompt — exported so a test can pin the flags without a process. */
 export function planInvocation(spec: HostSpec, body: HostPromptBody, prompt: string, opts: HostAdapterOptions, outFile: string): HostInvocation {
-  const env = opts.env ?? process.env
+  const base = opts.env ?? process.env
+  const env = spec.childEnv ? spec.childEnv(base) : base
   const { args, stdin } = spec.invocation(body, prompt, { directory: opts.directory, env, outFile })
-  return { bin: env[spec.binEnv] ?? spec.defaultBin, args, stdin, cwd: opts.directory, env }
+  return { bin: base[spec.binEnv] ?? spec.defaultBin, args, stdin, cwd: opts.directory, env }
 }
 
 export async function callHost(spec: HostSpec, body: HostPromptBody, prompt: string, opts: HostAdapterOptions): Promise<HostResult> {

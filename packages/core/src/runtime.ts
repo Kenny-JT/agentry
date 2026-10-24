@@ -15,7 +15,7 @@ import { checkDecisionSpec, isBatchDecision } from './decision';
 import { checkToolSpec } from './tool';
 import type { AgentDefinition, BranchRoute, Condition, RouteCondition, RuntimeName, Workflow } from './workflow';
 
-export const RUNTIME_NAMES: readonly RuntimeName[] = ['opencode', 'claude_code', 'codex'];
+export const RUNTIME_NAMES: readonly RuntimeName[] = ['opencode', 'claude_code', 'codex', 'omo'];
 
 export const fromList = (from: string | string[] | undefined): string[] =>
   from === undefined ? [] : Array.isArray(from) ? from : [from];

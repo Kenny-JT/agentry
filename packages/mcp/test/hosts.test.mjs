@@ -1,6 +1,7 @@
-// Runs on a CLI host: run_workflow with runtime claude / codex executes inside the server, one
-// CLI process per step. Fake CLIs stand in for claude and codex: they record their arguments,
-// stdin and working directory, then answer the way the real ones do.
+// Runs on a CLI host: run_workflow with runtime claude / codex / omo executes inside the server,
+// one CLI process per step. Fake CLIs stand in for claude, codex and omo: they record their
+// arguments, stdin, working directory and the caller-session variables they inherit, then answer
+// the way the real ones do.
 import { after, before, test } from "node:test"
 import assert from "node:assert/strict"
 import fs from "node:fs"
@@ -16,7 +17,7 @@ output: { description: "" }
 agents:
   look:
     prompt: Look around and say what you see.
-    agent_mapping: { opencode: explore, claude_code: scout, codex: careful }
+    agent_mapping: { opencode: explore, claude_code: scout, codex: careful, omo: sonnet }
     output: { schema: { summary: string } }
   write:
     input: { from: look }
@@ -31,12 +32,26 @@ const args = process.argv.slice(2)
 let stdin = ""
 process.stdin.setEncoding("utf8")
 for await (const chunk of process.stdin) stdin += chunk
-fs.appendFileSync(process.env.FAKE_HOST_LOG, JSON.stringify({ host: process.env.FAKE_HOST, args, stdin, cwd: process.cwd() }) + "\\n")
+const inherited = { PI_SESSION_ID: process.env.PI_SESSION_ID ?? null, PI_GOAL_STORE_FILE: process.env.PI_GOAL_STORE_FILE ?? null, PI_MODEL: process.env.PI_MODEL ?? null }
+fs.appendFileSync(process.env.FAKE_HOST_LOG, JSON.stringify({ host: process.env.FAKE_HOST, args, stdin, cwd: process.cwd(), env: inherited }) + "\\n")
+const reply = JSON.stringify({ summary: "seen by " + process.env.FAKE_HOST })
+if (process.env.FAKE_HOST === "omo") {
+  // omo -p --mode json: one event per line; a turn that ended in a tool call comes before the answer
+  const say = (event) => process.stdout.write(JSON.stringify(event) + "\\n")
+  say({ type: "session", version: 3, id: "fake-omo-session", cwd: process.cwd() })
+  say({ type: "message_end", message: { role: "user", content: [{ type: "text", text: stdin }] } })
+  if (process.env.FAKE_FAIL) {
+    say({ type: "message_end", message: { role: "assistant", content: [], stopReason: "error", errorMessage: process.env.FAKE_FAIL } })
+    process.exit(1)
+  }
+  say({ type: "message_end", message: { role: "assistant", content: [{ type: "text", text: "Let me look." }, { type: "toolCall", name: "read", arguments: {} }], stopReason: "toolUse" } })
+  say({ type: "message_end", message: { role: "assistant", content: [{ type: "text", text: reply }], stopReason: "stop" } })
+  process.exit(0)
+}
 if (process.env.FAKE_FAIL) {
   process.stdout.write(JSON.stringify({ type: "result", subtype: "success", is_error: true, result: process.env.FAKE_FAIL }))
   process.exit(1)
 }
-const reply = JSON.stringify({ summary: "seen by " + process.env.FAKE_HOST })
 if (process.env.FAKE_HOST === "codex") {
   fs.writeFileSync(args[args.indexOf("--output-last-message") + 1], reply)
   process.stdout.write("codex progress line\\n")
@@ -78,7 +93,7 @@ async function runOn(runtime, { clientName, env = {} } = {}) {
   fs.rmSync(log, { force: true })
   const mcp = await connect(dir, {
     AGENTRY_NO_BROWSER: "1", AGENTRY_RUNTIME: "", AGENTRY_OPENCODE_URL: "http://127.0.0.1:9", AGENTRY_OPENCODE_AUTOSTART: "0",
-    AGENTRY_CLAUDE_BIN: fakeCli("claude"), AGENTRY_CODEX_BIN: fakeCli("codex"), FAKE_HOST_LOG: log, ...env,
+    AGENTRY_CLAUDE_BIN: fakeCli("claude"), AGENTRY_CODEX_BIN: fakeCli("codex"), AGENTRY_OMO_BIN: fakeCli("omo"), FAKE_HOST_LOG: log, ...env,
   }, clientName)
   try {
     const started = await mcp.call("run_workflow", { file: "hosts.yaml", ...(runtime ? { runtime } : {}) })
@@ -134,6 +149,44 @@ test("runtime codex: `codex exec` reads the prompt from stdin; the answer is the
   assert.equal(flag(look.args, "--profile"), "careful")
   assert.equal(flag(write.args, "--sandbox"), "workspace-write")
   assert.match(write.stdin, /seen by codex/)
+})
+
+test("runtime omo: one `omo -p --mode json` per step, the prompt on stdin, the answer its last assistant message; read-only roles get only the read tools; agent_mapping.omo is the model", async () => {
+  const { started, done, calls } = await runOn("omo", { env: { PI_SESSION_ID: "caller", PI_GOAL_STORE_FILE: "caller-goals.json", PI_MODEL: "caller-model" } })
+  assert.equal(started.runtime, "omo")
+  assert.equal(done.status, "done", JSON.stringify(done))
+  assert.deepEqual(done.nodes.map((n) => [n.id, n.state, n.agent]), [["look", "done", "sonnet"], ["write", "done", "omo default"]])
+  assert.equal(calls.length, 2)
+  for (const call of calls) {
+    assert.equal(call.host, "omo")
+    assert.equal(fs.realpathSync(call.cwd), fs.realpathSync(dir))
+    assert.deepEqual(call.args.slice(0, 4), ["-p", "--mode", "json", "--no-session"])
+    assert.ok(call.args.includes("-nc") && call.args.includes("-na"), call.args.join(" "))
+    assert.equal(call.args.at(-1), "-")
+    // a step must not report into, or retitle, the omo session that started the server
+    assert.deepEqual(call.env, { PI_SESSION_ID: null, PI_GOAL_STORE_FILE: null, PI_MODEL: null })
+  }
+  const [look, write] = calls
+  assert.equal(flag(look.args, "--tools"), "read,grep,find,ls,web_search,webfetch")
+  assert.equal(flag(look.args, "--model"), "sonnet")
+  assert.match(look.stdin, /Look around and say what you see\./)
+  assert.match(flag(write.args, "--tools"), /^read,grep,find,ls,web_search,webfetch,edit,write,bash(,powershell)?$/)
+  assert.ok(!write.args.includes("--model"))
+  assert.match(write.stdin, /seen by omo/)
+})
+
+test("runtime omo: AGENTRY_OMO_MODEL is the model of steps that name none; a refused turn fails the step with omo's reason", async () => {
+  const { calls } = await runOn("omo", { env: { AGENTRY_OMO_MODEL: "haiku" } })
+  assert.deepEqual(calls.map((call) => flag(call.args, "--model")), ["sonnet", "haiku"])
+  const { done } = await runOn("omo", { env: { FAKE_FAIL: "All Claude accounts for anthropic-subscription are currently blocked" } })
+  assert.equal(done.status, "failed")
+  assert.equal(done.nodes[0].error, "omo reported an error: All Claude accounts for anthropic-subscription are currently blocked")
+})
+
+test("auto: omo as the MCP client (its client calls itself senpi-mcp-client) runs on omo", async () => {
+  const { started, done } = await runOn(undefined, { clientName: "senpi-mcp-client" })
+  assert.equal(started.runtime, "omo")
+  assert.equal(done.status, "done", JSON.stringify(done))
 })
 
 test("auto: Claude Code as the MCP client runs on claude; AGENTRY_RUNTIME wins over the client", async () => {
@@ -239,14 +292,14 @@ test("auto: a project set up for opencode stays on opencode even from Claude Cod
   }
 })
 
-test("auto from any other host stays on opencode, and its failure says how to pick claude or codex; a bad AGENTRY_RUNTIME is named", async () => {
+test("auto from any other host stays on opencode, and its failure says how to pick claude, codex or omo; a bad AGENTRY_RUNTIME is named", async () => {
   const env = { AGENTRY_NO_BROWSER: "1", AGENTRY_RUNTIME: "", AGENTRY_OPENCODE_URL: "http://127.0.0.1:9", AGENTRY_OPENCODE_AUTOSTART: "0" }
   const mcp = await connect(dir, env)
   try {
     const refused = await mcp.call("run_workflow", { file: "hosts.yaml" })
     assert.equal(refused.isError, true)
     assert.match(refused.text, /could not start the run/)
-    assert.match(refused.text, /runtime "claude" or "codex"/)
+    assert.match(refused.text, /runtime "claude", "codex" or "omo"/)
   } finally {
     await mcp.close()
   }
@@ -254,7 +307,7 @@ test("auto from any other host stays on opencode, and its failure says how to pi
   try {
     const refused = await bad.call("run_workflow", { file: "hosts.yaml" })
     assert.equal(refused.isError, true)
-    assert.match(refused.text, /AGENTRY_RUNTIME="gpt" is not one of opencode, claude, codex/)
+    assert.match(refused.text, /AGENTRY_RUNTIME="gpt" is not one of opencode, claude, codex, omo/)
   } finally {
     await bad.close()
   }

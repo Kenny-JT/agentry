@@ -144,13 +144,13 @@ function startFailure(message: string, opts: RunsOptions): string {
     ...(hasOpencodePlugin(opts.projectDir) ? [] : [`the Agentry plugin is not in ${plugin} (expected agentry.js) — the run needs it`]),
     `opencode server: ${opts.serverUrl}${opts.autostart ? ' (started when nothing listens there; needs the opencode CLI on PATH or AGENTRY_OPENCODE_BIN)' : ' (autostart is off)'}`,
     'auth: OPENCODE_SERVER_PASSWORD when the server has one',
-    'to run on Claude Code or Codex instead, pass runtime "claude" or "codex" (or set AGENTRY_RUNTIME)',
+    'to run on Claude Code, Codex or omo instead, pass runtime "claude", "codex" or "omo" (or set AGENTRY_RUNTIME)',
   ].join('\n');
 }
 
 type HostRunner = ReturnType<typeof createHostRunner>;
 
-const HOST_RUNTIME: Readonly<Record<Exclude<Runtime, 'opencode'>, HostRuntime>> = { claude: 'claude_code', codex: 'codex' };
+const HOST_RUNTIME: Readonly<Record<Exclude<Runtime, 'opencode'>, HostRuntime>> = { claude: 'claude_code', codex: 'codex', omo: 'omo' };
 
 export class Runs {
   private readonly dispatcher: Dispatcher;

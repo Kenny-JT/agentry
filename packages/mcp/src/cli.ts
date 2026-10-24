@@ -7,8 +7,8 @@
  * stdout is the protocol; everything we have to say goes to stderr. Runs go to the opencode
  * server at AGENTRY_OPENCODE_URL (default http://127.0.0.1:4096, auth OPENCODE_SERVER_PASSWORD),
  * started when nothing listens there (AGENTRY_OPENCODE_AUTOSTART=0 to refuse;
- * AGENTRY_OPENCODE_START / AGENTRY_OPENCODE_BIN to start it your own way). A run on Claude Code
- * or Codex instead executes in this process, one headless CLI call per step.
+ * AGENTRY_OPENCODE_START / AGENTRY_OPENCODE_BIN to start it your own way). A run on Claude Code,
+ * Codex or omo instead executes in this process, one headless CLI call per step.
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
@@ -22,7 +22,7 @@ import { SERVER_INFO, createServer } from './server';
 const USAGE = `agentry-mcp — MCP server (stdio) to list, edit, validate, run and watch one project's Agentry workflows
 
   agentry-mcp [--dir <project>]      project root (default: cwd or AGENTRY_PROJECT_DIR)
-  agentry-mcp run <file> [--dir <project>] [--runtime opencode|claude|codex] [--input <text>] [--json]
+  agentry-mcp run <file> [--dir <project>] [--runtime opencode|claude|codex|omo] [--input <text>] [--json]
                                      run one workflow from a terminal and wait for it; exit 1 if it fails
 
   AGENTRY_OPENCODE_URL        opencode server runs go to (default http://127.0.0.1:4096)
@@ -31,10 +31,11 @@ const USAGE = `agentry-mcp — MCP server (stdio) to list, edit, validate, run a
   AGENTRY_OPENCODE_START      script that starts the server your own way
   AGENTRY_OPENCODE_BIN        opencode executable for the direct start
 
-  AGENTRY_RUNTIME             where runs execute: opencode | claude | codex (default: opencode when the
+  AGENTRY_RUNTIME             where runs execute: opencode | claude | codex | omo (default: opencode when the
                               project has the plugin, else the host you call from, else opencode)
   AGENTRY_CLAUDE_BIN          claude executable; AGENTRY_CLAUDE_MODEL, AGENTRY_CLAUDE_PERMISSION_MODE
-  AGENTRY_CODEX_BIN           codex executable; AGENTRY_CODEX_MODEL, AGENTRY_CODEX_SANDBOX`;
+  AGENTRY_CODEX_BIN           codex executable; AGENTRY_CODEX_MODEL, AGENTRY_CODEX_SANDBOX
+  AGENTRY_OMO_BIN             omo executable; AGENTRY_OMO_MODEL, the model of steps without agent_mapping.omo`;
 
 const log = (message: string) => process.stderr.write(`[agentry-mcp] ${message}\n`);
 
