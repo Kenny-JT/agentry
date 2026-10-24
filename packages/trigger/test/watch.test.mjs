@@ -274,3 +274,95 @@ test("dispatch: hands the run to the project's live panel with its token, waitin
   fs.rmSync(path.join(project, ".agentry", "panel.json"))
   await assert.rejects(dispatcher.run("workflows/x.yaml", ""), /no opencode server on http:\/\/127\.0\.0\.1:9 \(autostart is off\)/)
 })
+
+/** Stand-in for the panel the plugin brings up when its project loads: answers /health and takes
+ *  one run. Writing panel.json is what "the project loaded" looks like to the dispatcher. */
+async function standInPanel(project) {
+  const panel = http.createServer((req, res) => {
+    res.writeHead(req.url === "/health" ? 200 : 202, { "Content-Type": "application/json" })
+    res.end(JSON.stringify(req.url === "/health" ? { app: "agentry", busy: false } : { ok: true, runId: "run_woken" }))
+  })
+  await new Promise((resolve) => panel.listen(0, "127.0.0.1", resolve))
+  fs.mkdirSync(path.join(project, ".agentry"), { recursive: true })
+  fs.writeFileSync(path.join(project, ".agentry", "panel.json"), JSON.stringify({ port: panel.address().port, runId: "", token: "t" }))
+  return panel
+}
+
+async function fakeOpencode(handle) {
+  const server = http.createServer(handle)
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve))
+  return { server, url: `http://127.0.0.1:${server.address().port}` }
+}
+
+const stopAll = (...servers) => {
+  for (const server of servers) {
+    server?.close()
+    server?.closeAllConnections()
+  }
+}
+
+test("dispatch: an opencode 2 server is woken through its API location, not the web app it serves on /path", async () => {
+  const project = tempDir()
+  const seen = []
+  let panel
+  const oc = await fakeOpencode(async (req, res) => {
+    const url = new URL(req.url, "http://x")
+    seen.push({ path: url.pathname, dir: url.searchParams.get("location[directory]"), auth: req.headers.authorization })
+    if (url.pathname === "/api/agent") {
+      panel = await standInPanel(project)
+      res.writeHead(200, { "Content-Type": "application/json" })
+      res.end(JSON.stringify({ location: { directory: project }, data: [] }))
+    } else {
+      res.writeHead(200, { "Content-Type": "text/html" }) // the 2.x web app answers every other path
+      res.end("<!doctype html>")
+    }
+  })
+  try {
+    const dispatcher = new Dispatcher({ projectDir: project, serverUrl: oc.url, password: "pw", autostart: false, log: quiet })
+    assert.equal((await dispatcher.run("workflows/x.yaml", "")).runId, "run_woken")
+    assert.deepEqual(seen.map((r) => r.path), ["/api/agent"])
+    assert.equal(seen[0].dir, project)
+    assert.equal(seen[0].auth, `Basic ${Buffer.from("opencode:pw").toString("base64")}`)
+  } finally {
+    stopAll(oc.server, panel)
+  }
+})
+
+test("dispatch: an opencode 1 server, which has no /api, is woken through /path?directory=", async () => {
+  const project = tempDir()
+  const seen = []
+  let panel
+  const oc = await fakeOpencode(async (req, res) => {
+    const url = new URL(req.url, "http://x")
+    seen.push(url.pathname)
+    if (url.pathname === "/path") {
+      seen.push(url.searchParams.get("directory"))
+      panel = await standInPanel(project)
+      res.writeHead(200, { "Content-Type": "application/json" })
+      res.end(JSON.stringify({ directory: project }))
+    } else {
+      res.writeHead(404, { "Content-Type": "text/plain" })
+      res.end("Not Found")
+    }
+  })
+  try {
+    const dispatcher = new Dispatcher({ projectDir: project, serverUrl: oc.url, autostart: false, log: quiet })
+    assert.equal((await dispatcher.run("workflows/x.yaml", "")).runId, "run_woken")
+    assert.deepEqual(seen, ["/api/agent", "/path", project])
+  } finally {
+    stopAll(oc.server, panel)
+  }
+})
+
+test("dispatch: a server that wants a password says how to give it one", async () => {
+  const oc = await fakeOpencode((req, res) => {
+    res.writeHead(401, { "Content-Type": "application/json" })
+    res.end('{"_tag":"UnauthorizedError","message":"Authentication required"}')
+  })
+  try {
+    const dispatcher = new Dispatcher({ projectDir: tempDir(), serverUrl: oc.url, autostart: false, log: quiet })
+    await assert.rejects(dispatcher.run("workflows/x.yaml", ""), /start it with OPENCODE_SERVER_PASSWORD set/)
+  } finally {
+    stopAll(oc.server)
+  }
+})

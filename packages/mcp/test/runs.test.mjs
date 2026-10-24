@@ -112,7 +112,8 @@ test("without a live panel the dispatcher wakes the project through the opencode
     const run = await mcp2.call("run_workflow", { file: "hero.yaml" })
     assert.equal(run.isError, false, run.text)
     assert.equal(woken.length, 1)
-    assert.equal(woken[0], `/path?directory=${encodeURIComponent(other)}`)
+    // the fake answers JSON like an opencode 2 server, so the API location wakes it (no /path fallback)
+    assert.equal(woken[0], `/api/agent?location[directory]=${encodeURIComponent(other)}`)
     const finished = await mcp2.call("wait_for_run", { run_id: run.data.run_id, timeout_s: 5 })
     assert.equal(finished.data.status, "done")
   } finally {

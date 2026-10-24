@@ -4,6 +4,12 @@ Notable changes to Agentry. The format follows [Keep a Changelog](https://keepac
 
 ## [Unreleased]
 
+### Fixed
+
+- The opencode plugin loads and runs on opencode 2 (checked on 2.1.2) and keeps working on opencode 1. On opencode 2, which gives plugins no log, progress goes to `.agentry/agentry.log`.
+- `agentry-watch` and `agentry-mcp` wake projects on opencode 2 servers, and a server that wants a password says to start it with `OPENCODE_SERVER_PASSWORD`.
+- `agentry-watch` and `run_workflow` wait up to 5 minutes for a project's first start, while opencode installs the plugin's dependency, and a timeout says what was happening.
+
 ## [0.1.0] - 2026-10-16
 
 First public version. Everything below is what the project contains so far.

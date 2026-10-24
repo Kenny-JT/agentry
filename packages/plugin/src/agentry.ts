@@ -1,4 +1,3 @@
-import { tool } from "@opencode-ai/plugin"
 import type { Hooks } from "@opencode-ai/plugin"
 import { parse as parseYaml } from "yaml"
 import * as fs from "node:fs"
@@ -70,9 +69,10 @@ interface OpencodeClient {
 
 type LogLevel = "debug" | "info" | "warn" | "error"
 
-// Progress and errors go to opencode's own log, never to stdout/stderr: the TUI owns the
-// terminal and plugin output there tears through its rendering. opencode.log (directory from
-// `opencode debug paths`) does not print the service tag, hence the [agentry] prefix to grep for.
+// Progress and errors go to the host's log, never to stdout/stderr: the TUI owns the terminal
+// and plugin output there tears through its rendering. opencode 1 keeps them in opencode.log
+// (directory from `opencode debug paths`; it does not print the service tag, hence the [agentry]
+// prefix to grep for). opencode 2 gives plugins no log, so there they go to .agentry/agentry.log.
 let host: OpencodeClient | null = null
 function log(level: LogLevel, message: string) {
   void host?.app.log?.({ body: { service: "agentry", level, message: `[agentry] ${message}` } })?.catch(() => {})
@@ -1515,12 +1515,130 @@ function loadWorkflowFile(directory: string, file: string): LoadedWorkflow {
   return { ok: true, workflow: check.workflow }
 }
 
+// ── agentry_run, shared by both hosts ──
+type RunArgs = { workflow?: string; resume?: string; input?: string }
+
+const RUN_TOOL_DESCRIPTION =
+  "Run an Agentry workflow from a YAML file. " +
+  "Pass `workflow` with a path to run it. Omit for the built-in 2-node demo. " +
+  "Pass `resume` with a run ID to continue an interrupted run. " +
+  "Pass `input` to hand the workflow's entry nodes some context (what started the run)."
+const RUN_ARGS = {
+  workflow: "Path to workflow.yaml relative to project root",
+  resume: "Run ID to resume, e.g. run_1719200000000",
+  input: "Context for the entry nodes (the nodes wired from IN), e.g. a trigger event",
+} as const
+
+// no workflow arg → B0 spike demo
+const DEMO_WORKFLOW: Workflow = {
+  introduction: "B0 Spike (hardcoded 2-node demo)",
+  type: "pipeline",
+  input: { description: "project directory" },
+  output: { description: "project summary" },
+  agents: {
+    explore_code: {
+      prompt: "List the top-level files and directories in this project. Return a brief summary. Be concise — no more than 15 lines.",
+      agent_mapping: { opencode: "explore" },
+      output: { schema: {} },
+    },
+    write_summary: {
+      prompt: "Write a one-paragraph project summary (≤100 words). Return only the summary text.",
+      input: { from: "explore_code" },
+      agent_mapping: { opencode: "build" },
+      output: { schema: {} },
+    },
+  },
+  workflow: ["explore_code", "write_summary"],
+}
+
+async function runFromArgs(client: OpencodeClient, directory: string, args: RunArgs): Promise<string> {
+  if (!args.workflow) return await runWorkflow(client, directory, DEMO_WORKFLOW)
+  const loaded = loadWorkflowFile(directory, args.workflow)
+  if (!loaded.ok) return loaded.error
+  return await runWorkflow(client, directory, loaded.workflow, { resumeRunId: args.resume, input: args.input })
+}
+
+// ── opencode 2 host ──
+// opencode 2 loads `{ id, setup(ctx) }` (the `@opencode/plugin` promise API) instead of server().
+// The runner keeps talking to the client slice above; v2Client maps it onto ctx, structurally
+// again, so the bundle needs no opencode 2 package at runtime.
+interface V2ModelRef { id: string; providerID: string; variant?: string }
+interface V2Message {
+  id: string
+  type: string
+  content?: unknown[]
+  outcome?: "succeeded" | "failed" | "interrupted"
+  error?: { message: string }
+}
+interface V2Tool {
+  name: string
+  description: string
+  input: Record<string, unknown>
+  execute(input: RunArgs, context: { sessionID: string }): Promise<{ content: string }>
+}
+interface V2Context {
+  location: { directory: string }
+  agent: { list(input: { location: { directory: string } }): Promise<{ data: Array<{ id: string }> }> }
+  session: {
+    create(input: { title: string; parentID?: string; model?: V2ModelRef; location: { directory: string } }): Promise<{ id: string }>
+    get(input: { sessionID: string }): Promise<{ model?: V2ModelRef }>
+    switchAgent(input: { sessionID: string; agent: string }): Promise<void>
+    prompt(input: { sessionID: string; text: string }): Promise<{ id: string }>
+    wait(input: { sessionID: string }): Promise<void>
+    context(input: { sessionID: string }): Promise<V2Message[]>
+  }
+  tool: { transform(edit: (tools: { add(tool: V2Tool): void }) => void): Promise<{ dispose(): Promise<void> }> }
+}
+
+// `prompt` only admits the message. `wait` returns once the agent loop is idle again, and the
+// loop closes every turn with an `idle` record carrying its outcome: the reply is the last
+// assistant text between our message and that record.
+async function promptV2(ctx: V2Context, sessionID: string, body: Record<string, unknown>): Promise<string> {
+  if (typeof body.agent === "string" && body.agent) await ctx.session.switchAgent({ sessionID, agent: body.agent })
+  const sent = await ctx.session.prompt({ sessionID, text: extractText(Array.isArray(body.parts) ? body.parts : []) })
+  await ctx.session.wait({ sessionID })
+  const messages = await ctx.session.context({ sessionID })
+  const after = messages.slice(messages.findIndex((m) => m.id === sent.id) + 1)
+  const idle = after.find((m) => m.type === "idle")
+  if (!idle) throw new Error("opencode reported the session idle before it answered")
+  if (idle.outcome !== "succeeded") throw new Error(idle.error?.message ?? `the session ended ${idle.outcome}`)
+  const replies = after.filter((m) => m.type === "assistant").map((m) => extractText(m.content ?? [])).filter(Boolean)
+  return replies[replies.length - 1] ?? ""
+}
+
+function v2Client(ctx: V2Context, model?: V2ModelRef): OpencodeClient {
+  const location = { directory: ctx.location.directory }
+  return {
+    app: {
+      agents: async () => ({ data: (await ctx.agent.list({ location })).data.map((a) => ({ name: a.id })) }),
+      log: async ({ body }) => {
+        const file = path.join(location.directory, ".agentry", "agentry.log")
+        fs.mkdirSync(path.dirname(file), { recursive: true })
+        fs.appendFileSync(file, `${ts()} ${body.level} ${body.message}\n`)
+      },
+    },
+    session: {
+      // node sessions run on the model of the conversation that started the run
+      create: async ({ body }) => {
+        const session = await ctx.session.create({
+          title: body.title, location, ...(body.parentID ? { parentID: body.parentID } : {}), ...(model ? { model } : {}),
+        })
+        return { data: { id: session.id } }
+      },
+      prompt: async ({ path: { id }, body }) => ({ data: { parts: [{ type: "text", text: await promptV2(ctx, id, body) }] } }),
+    },
+  }
+}
+
 // ── plugin entry ──
 export default {
   id: "agentry",
 
+  // opencode 1
   server: async (input: { client: OpencodeClient; directory: string }): Promise<Hooks> => {
     const { client, directory } = input
+    // opencode 2 never calls server(): importing the v1 SDK here keeps it off that host's path
+    const { tool } = await import("@opencode-ai/plugin")
     host = client
     runHost = { client, directory }
     // The panel — and POST /api/run with it — comes up with the instance, so agentry-watch can
@@ -1530,52 +1648,50 @@ export default {
     return {
       tool: {
         agentry_run: tool({
-          description:
-            "Run an Agentry workflow from a YAML file. " +
-            "Pass `workflow` with a path to run it. Omit for the built-in 2-node demo. " +
-            "Pass `resume` with a run ID to continue an interrupted run. " +
-            "Pass `input` to hand the workflow's entry nodes some context (what started the run).",
+          description: RUN_TOOL_DESCRIPTION,
           args: {
-            workflow: tool.schema.string().optional()
-              .describe("Path to workflow.yaml relative to project root"),
-            resume: tool.schema.string().optional()
-              .describe("Run ID to resume, e.g. run_1719200000000"),
-            input: tool.schema.string().optional()
-              .describe("Context for the entry nodes (the nodes wired from IN), e.g. a trigger event"),
+            workflow: tool.schema.string().optional().describe(RUN_ARGS.workflow),
+            resume: tool.schema.string().optional().describe(RUN_ARGS.resume),
+            input: tool.schema.string().optional().describe(RUN_ARGS.input),
           },
-          async execute(args: { workflow?: string; resume?: string; input?: string }) {
-            // no workflow arg → B0 spike demo
-            if (!args.workflow) {
-              return await runWorkflow(client, directory, {
-                introduction: "B0 Spike (hardcoded 2-node demo)",
-                type: "pipeline",
-                input: { description: "project directory" },
-                output: { description: "project summary" },
-                agents: {
-                  explore_code: {
-                    prompt: "List the top-level files and directories in this project. Return a brief summary. Be concise — no more than 15 lines.",
-                    agent_mapping: { opencode: "explore" },
-                    output: { schema: {} },
-                  },
-                  write_summary: {
-                    prompt: "Write a one-paragraph project summary (≤100 words). Return only the summary text.",
-                    input: { from: "explore_code" },
-                    agent_mapping: { opencode: "build" },
-                    output: { schema: {} },
-                  },
-                },
-                workflow: ["explore_code", "write_summary"],
-              })
-            }
-
-            const loaded = loadWorkflowFile(directory, args.workflow)
-            if (!loaded.ok) return loaded.error
-            return await runWorkflow(client, directory, loaded.workflow, { resumeRunId: args.resume, input: args.input })
+          async execute(args: RunArgs) {
+            return await runFromArgs(client, directory, args)
           },
         }),
       },
       // D12: opencode's instance finalizer — close the panel and withdraw panel.json
       dispose: shutdownPanel,
+    }
+  },
+
+  // opencode 2: same tool and panel; the returned cleanup is that host's instance finalizer
+  setup: async (ctx: V2Context) => {
+    const { directory } = ctx.location
+    const client = v2Client(ctx)
+    host = client
+    runHost = { client, directory }
+    void startPanelServer(directory)
+
+    const registration = await ctx.tool.transform((tools) => tools.add({
+      name: "agentry_run",
+      description: RUN_TOOL_DESCRIPTION,
+      input: {
+        type: "object",
+        properties: {
+          workflow: { type: "string", description: RUN_ARGS.workflow },
+          resume: { type: "string", description: RUN_ARGS.resume },
+          input: { type: "string", description: RUN_ARGS.input },
+        },
+        additionalProperties: false,
+      },
+      execute: async (args, context) => {
+        const { model } = await ctx.session.get({ sessionID: context.sessionID })
+        return { content: await runFromArgs(v2Client(ctx, model), directory, args) }
+      },
+    }))
+    return async () => {
+      await registration.dispose()
+      await shutdownPanel()
     }
   },
 }
