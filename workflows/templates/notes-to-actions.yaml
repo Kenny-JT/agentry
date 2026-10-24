@@ -1,0 +1,79 @@
+# Turn notes into action items
+# Use when: you have meeting notes, a call transcript or a brain dump in a file and want the decisions, owners and next steps pulled out.
+# Tags: writing, planning
+#
+# Flow: read_notes -> extract -> write_actions -> save_actions
+# Give the path of the notes file, relative to the project. read_notes runs without a model.
+
+introduction: Read a notes file and pull out decisions, action items and open questions
+type: pipeline
+input:
+  description: "The path of the notes file inside the project, for example notes/2026-10-23.md"
+  to: [read_notes]
+output:
+  description: "Decisions, action items and open questions at .agentry/output/actions.md"
+  from: [save_actions]
+
+agents:
+  read_notes:
+    introduction: Read the notes file
+    type: tool
+    tool:
+      kind: read_file
+      path: "{input}"
+    output:
+      schema: { path: string, bytes: number, content: string, json: any }
+
+  extract:
+    introduction: Pull out decisions, actions and questions
+    type: straight
+    input:
+      from: read_notes
+      select: { read_notes: [content] }
+    output:
+      schema: { decisions: "string[]", actions: "string[]", questions: "string[]" }
+    prompt: |
+      Read the notes in the context and pull out:
+      - `decisions`: what was decided, one per entry
+      - `actions`: things someone will do, as "owner - task - due date"; write "unassigned"
+        or "no date" when the notes do not say, and never invent an owner or a date
+      - `questions`: things left open or that need someone to find out
+
+      Keep the notes' own wording where you can.
+    agent_mapping:
+      opencode: general
+
+  write_actions:
+    introduction: Write them up as a checklist
+    type: straight
+    input:
+      from: extract
+    output:
+      schema: { summary: string }
+    prompt: |
+      Write the decisions, action items and open questions from the context as Markdown: a
+      "# Actions" heading, one sentence on what the notes were about, then "## Decisions"
+      (a list), "## Action items" (a checklist, "- [ ] owner: task (due)", grouped by owner)
+      and "## Open questions". Skip empty sections.
+
+      Return the Markdown as `summary`.
+    agent_mapping:
+      opencode: general
+
+  save_actions:
+    introduction: Save the checklist
+    type: tool
+    input:
+      from: write_actions
+    tool:
+      kind: write_file
+      path: .agentry/output/actions.md
+      content: "{write_actions.summary}"
+    output:
+      schema: { path: string, bytes: number, mode: string }
+
+workflow:
+  - read_notes
+  - extract
+  - write_actions
+  - save_actions

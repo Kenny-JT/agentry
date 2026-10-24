@@ -1,0 +1,88 @@
+# Add tests for a module
+# Use when: a file, module or function has no tests (or too few) and you want tests in the project's own style, run until they pass.
+# Tags: code, tests
+#
+# Flow: study -> write_tests -> make_them_pass -> save_summary
+# make_them_pass repeats, at most three times, until its status is ALL_TESTS_GREEN.
+
+introduction: Write tests for a module in the project's style and get them passing
+type: pipeline
+input:
+  description: "What to test: a file path, a module or a function name, and anything the tests must cover."
+  to: [study]
+output:
+  description: "New tests that pass, and a summary at .agentry/output/tests.md"
+  from: [save_summary]
+
+agents:
+  study:
+    introduction: Learn the code and how the project tests things
+    type: straight
+    output:
+      schema: { behaviours: "string[]", conventions: string, test_command: string }
+    prompt: |
+      The context names the code to test. Read it and list the behaviours worth testing:
+      normal cases, edge cases (empty, missing, very large or invalid input) and error paths.
+
+      Then find how this project tests: the framework, where test files live, how they are
+      named, the helpers and fixtures they use, and the command that runs them.
+
+      Return `behaviours` (one entry per behaviour), `conventions` (the rules to follow,
+      naming one existing test file as the example) and `test_command`.
+    agent_mapping:
+      opencode: explore
+
+  write_tests:
+    introduction: Write the tests
+    type: straight
+    input:
+      from: study
+    output:
+      schema: { files: "string[]", tests: "string[]" }
+    prompt: |
+      Write a test for every behaviour in the context, following the project's conventions
+      exactly. One test per behaviour, named after what it checks. Test behaviour, not
+      implementation details, and do not change the code under test.
+
+      Return `files` (the test files you wrote or changed) and `tests` (the test names).
+    agent_mapping:
+      opencode: build
+
+  make_them_pass:
+    introduction: Run the new tests and fix them until they pass
+    type: straight
+    input:
+      from: [study, write_tests]
+    trigger:
+      loop:
+        max: 3
+        exit_when: { contains: ALL_TESTS_GREEN }
+    output:
+      schema: { status: string, report: string }
+    prompt: |
+      Run the test command from the context. When a new test fails because the test is
+      wrong, fix the test. When it fails because the code has a bug, keep the test and
+      describe the bug; do not weaken the test to make it pass.
+
+      Set `status` to exactly "ALL_TESTS_GREEN" when every new test passes, otherwise to
+      "STILL_FAILING". In `report`, say what you ran, what failed and what you changed.
+    agent_mapping:
+      opencode: build
+
+  save_summary:
+    introduction: Save a summary of the new tests
+    type: tool
+    input:
+      from: [write_tests, make_them_pass]
+    tool:
+      kind: write_file
+      path: .agentry/output/tests.md
+      content: "# New tests\n\nFiles: {write_tests.files}\n\nTests: {write_tests.tests}\n\n## Last run: {make_them_pass.status}\n\n{make_them_pass.report}\n"
+    output:
+      schema: { path: string, bytes: number, mode: string }
+
+workflow:
+  - study
+  - write_tests
+  - make_them_pass
+  - save_summary

@@ -1581,3 +1581,15 @@ button {
   color: var(--agentry-color-text-muted);
   font-family: var(--agentry-font-mono);
 }
+
+.agentry-templatecard__desc {
+  display: -webkit-box;
+  margin: 0;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  font-size: var(--agentry-fs-xs);
+  line-height: 1.4;
+  color: var(--agentry-color-text-muted);
+}

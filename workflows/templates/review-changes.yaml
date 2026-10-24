@@ -1,0 +1,160 @@
+# Review my changes
+# Use when: a change is done and you want bugs, risks and missing tests pointed out before you commit or open a pull request.
+# Tags: code, review
+#
+# Flow: [get_diff | list_new_files] -> [find_bugs | check_safety | check_tests] -> write_review -> save_review
+# The two git steps run without a model; the three reviewers run at the same time.
+
+introduction: Review the uncommitted changes from three angles and write one review
+type: pipeline
+input:
+  description: "Nothing is required: the review covers `git diff HEAD`, everything changed since your last commit. Optionally say what the change is meant to do."
+  to: [find_bugs, check_safety, check_tests]
+output:
+  description: "One review with the findings that matter, at .agentry/output/review.md"
+  from: [save_review]
+
+agents:
+  get_diff:
+    introduction: Collect the diff since the last commit
+    type: tool
+    tool:
+      kind: script
+      command: [git, diff, HEAD]
+      timeout_s: 30
+    output:
+      schema: { exit_code: number, stdout: string, stderr: string, result: any }
+
+  list_new_files:
+    introduction: List new files git does not track yet
+    type: tool
+    tool:
+      kind: script
+      command: [git, ls-files, --others, --exclude-standard]
+      timeout_s: 30
+    output:
+      schema: { exit_code: number, stdout: string, stderr: string, result: any }
+
+  find_bugs:
+    introduction: Look for defects the change introduces
+    type: straight
+    input:
+      from: [get_diff, list_new_files]
+    output:
+      schema: { bugs: "string[]", summary: string }
+    prompt: |
+      You are reviewing a code change. The context holds the output of `git diff HEAD`
+      (the diff) and of `git ls-files --others --exclude-standard` (new files git does not
+      track yet; the diff cannot show them, so read each of those files in full).
+
+      Look only for real defects the change introduces or exposes:
+      - logic errors, wrong conditions, off-by-one mistakes
+      - cases that are not handled: empty input, missing values, errors, concurrency
+      - callers elsewhere in the project that the change breaks (search for them)
+      - resource leaks and wrong types
+
+      Ignore style and naming. For every bug give the file and line, what goes wrong and the
+      smallest fix. Do not invent findings: if you find nothing, say so. If the diff is empty
+      and there are no new files, report that there is nothing to review.
+
+      Return `bugs` (one entry per finding: "file:line - what goes wrong - fix") and
+      `summary` (one sentence on the state of the change).
+    agent_mapping:
+      opencode: explore
+
+  check_safety:
+    introduction: Look for security and data-safety problems
+    type: straight
+    input:
+      from: [get_diff, list_new_files]
+    output:
+      schema: { issues: "string[]", summary: string }
+    prompt: |
+      You are reviewing a code change for safety. The context holds the output of
+      `git diff HEAD` (the diff) and of `git ls-files --others --exclude-standard` (new files
+      git does not track yet; read each of those files in full).
+
+      Check the change for:
+      - secrets, tokens or passwords written into code or config
+      - input from users, files or the network reaching a shell, a query, a file path or HTML
+        without validation
+      - missing permission or authentication checks on anything new
+      - operations that can lose or corrupt data: deletes, overwrites, migrations, retries
+      - new dependencies, and anything that runs with more rights than it needs
+
+      Report only what the change itself introduces. For every issue give the file and line,
+      how it could be abused or go wrong, and the fix. If the change is clean, say so.
+
+      Return `issues` (one entry per finding: "file:line - risk - fix") and `summary`
+      (one sentence).
+    agent_mapping:
+      opencode: explore
+
+  check_tests:
+    introduction: Check whether the change is tested
+    type: straight
+    input:
+      from: [get_diff, list_new_files]
+    output:
+      schema: { gaps: "string[]", summary: string }
+    prompt: |
+      You are reviewing a code change for test coverage. The context holds the output of
+      `git diff HEAD` (the diff) and of `git ls-files --others --exclude-standard` (new files
+      git does not track yet; read each of those files in full).
+
+      Work out which behaviours the change adds or alters, then find the tests that cover
+      them, in the diff or already in the project (look at how this project tests things).
+      For every behaviour without a test, describe the concrete test that is missing: which
+      function, which input, which expected result. Do not write the tests.
+
+      Return `gaps` (one entry per missing test: "file - behaviour - the test to add") and
+      `summary` (one sentence on how well the change is covered).
+    agent_mapping:
+      opencode: explore
+
+  write_review:
+    introduction: Merge the three reviews into one
+    type: straight
+    input:
+      from: [find_bugs, check_safety, check_tests]
+    output:
+      schema: { review: string, verdict: string }
+    prompt: |
+      Combine the three reviews into one review a developer can act on.
+
+      - Keep every real finding once; drop duplicates and anything vague.
+      - Order by importance: what must be fixed before this ships first.
+      - Keep the file and line on every item.
+
+      Write `review` as Markdown with these sections:
+      # Review
+      ## Summary (two or three sentences)
+      ## Must fix
+      ## Should fix
+      ## Tests to add
+      ## Looks good (what was done well, briefly)
+
+      Set `verdict` to "ready" when nothing must be fixed, otherwise "needs changes".
+    agent_mapping:
+      opencode: general
+
+  save_review:
+    introduction: Save the review
+    type: tool
+    input:
+      from: write_review
+    tool:
+      kind: write_file
+      path: .agentry/output/review.md
+      content: "{write_review.review}"
+    output:
+      schema: { path: string, bytes: number, mode: string }
+
+workflow:
+  - get_diff
+  - list_new_files
+  - find_bugs
+  - check_safety
+  - check_tests
+  - write_review
+  - save_review

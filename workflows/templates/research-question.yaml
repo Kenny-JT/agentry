@@ -1,0 +1,121 @@
+# Research a question
+# Use when: you need a sourced answer: choosing between libraries, how something works, what changed in a field.
+# Tags: research, writing
+#
+# Flow: scope -> [research_a | research_b | research_c] -> answer -> save_answer
+# scope splits the question into three angles; each researcher receives only its own angle.
+
+introduction: Split a question into three angles, research them at the same time and answer with sources
+type: pipeline
+input:
+  description: "The question, and what the answer is for: a decision, a write-up, or curiosity."
+  to: [scope]
+output:
+  description: "A sourced answer at .agentry/output/research.md"
+  from: [save_answer]
+
+agents:
+  scope:
+    introduction: Split the question into three angles
+    type: straight
+    output:
+      schema: { question: string, angle_a: string, angle_b: string, angle_c: string }
+    prompt: |
+      Restate the question in the context in one sentence as `question`. Then split it into
+      three angles that together answer it and do not overlap, for example: how it works /
+      how it compares with the alternatives / what goes wrong in practice. Write each angle
+      as one concrete question.
+    agent_mapping:
+      opencode: plan
+
+  research_a:
+    introduction: Research the first angle
+    type: straight
+    input:
+      from: scope
+      select: { scope: [angle_a] }
+    output:
+      schema: { findings: "string[]", sources: "string[]" }
+    prompt: |
+      Research the question in the context. Search the web and prefer primary sources
+      (documentation, papers, release notes, source code) to summaries of them. Note where
+      sources disagree.
+
+      Return `findings` (one fact or claim per entry, ending with its source number in
+      square brackets) and `sources` (numbered: "[1] title - URL").
+    agent_mapping:
+      opencode: general
+
+  research_b:
+    introduction: Research the second angle
+    type: straight
+    input:
+      from: scope
+      select: { scope: [angle_b] }
+    output:
+      schema: { findings: "string[]", sources: "string[]" }
+    prompt: |
+      Research the question in the context. Search the web and prefer primary sources
+      (documentation, papers, release notes, source code) to summaries of them. Note where
+      sources disagree.
+
+      Return `findings` (one fact or claim per entry, ending with its source number in
+      square brackets) and `sources` (numbered: "[1] title - URL").
+    agent_mapping:
+      opencode: general
+
+  research_c:
+    introduction: Research the third angle
+    type: straight
+    input:
+      from: scope
+      select: { scope: [angle_c] }
+    output:
+      schema: { findings: "string[]", sources: "string[]" }
+    prompt: |
+      Research the question in the context. Search the web and prefer primary sources
+      (documentation, papers, release notes, source code) to summaries of them. Note where
+      sources disagree.
+
+      Return `findings` (one fact or claim per entry, ending with its source number in
+      square brackets) and `sources` (numbered: "[1] title - URL").
+    agent_mapping:
+      opencode: general
+
+  answer:
+    introduction: Answer the question with sources
+    type: straight
+    input:
+      from: [scope, research_a, research_b, research_c]
+      select: { scope: [question] }
+    output:
+      schema: { answer: string }
+    prompt: |
+      Answer the question in the context from the three sets of findings. Open with the
+      direct answer in two or three sentences, then give the details angle by angle. Keep a
+      source number on every claim, renumber the sources into one list, and end with a
+      "## Sources" section. Say plainly where sources disagree or the evidence is thin.
+
+      Return `answer` as Markdown that starts with "# " and the question.
+    agent_mapping:
+      opencode: general
+
+  save_answer:
+    introduction: Save the answer
+    type: tool
+    input:
+      from: answer
+    tool:
+      kind: write_file
+      path: .agentry/output/research.md
+      content: "{answer.answer}"
+    output:
+      schema: { path: string, bytes: number, mode: string }
+
+workflow:
+  - scope
+  - research_a
+  - research_b
+  - research_c
+  - answer
+  - save_answer

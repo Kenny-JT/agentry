@@ -4,6 +4,8 @@ import type { HistorySort, SidebarView } from '../App';
 import { AGENT_DROP_MIME, agentGroupLabel, agentGroups, agentTemplates } from '../agentTemplates';
 import type { AgentTemplate } from '../agentTemplates';
 import type { SavedWorkflow } from '../workflowStore';
+import { workflowTemplates } from '../templates';
+import type { WorkflowTemplate } from '../templates';
 import { HistoryIcon, ImportIcon, ManageIcon, PlusIcon, SortIcon, TrashIcon } from './icons';
 
 export interface HistoryProps {
@@ -19,6 +21,7 @@ export interface SidebarProps {
   view: SidebarView;
   onAddAgent: (template: AgentTemplate) => void;
   onImportSubworkflow: () => void;
+  onOpenTemplate: (template: WorkflowTemplate) => void;
   history: HistoryProps;
 }
 
@@ -203,11 +206,50 @@ function HistoryPanel({ items, sort, onSort, onOpen, onDelete, currentId }: Hist
   );
 }
 
-export function Sidebar({ view, onAddAgent, onImportSubworkflow, history }: SidebarProps) {
+function TemplatesPanel({ onOpen }: { onOpen: (template: WorkflowTemplate) => void }) {
+  return (
+    <section className="agentry-panel" aria-label="Workflow templates">
+      <div className="agentry-sidebar__header">
+        <span className="agentry-sidebar__title">Templates</span>
+      </div>
+      <div className="agentry-sidebar__body">
+        {workflowTemplates.map((template) => (
+          <article
+            key={template.id}
+            className="agentry-historycard agentry-templatecard"
+            role="button"
+            tabIndex={0}
+            title={`Open "${template.title}" as a new workflow`}
+            onClick={() => onOpen(template)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault();
+                onOpen(template);
+              }
+            }}
+          >
+            <span className="agentry-historycard__name">{template.title}</span>
+            <p className="agentry-templatecard__desc">
+              {template.useWhen.charAt(0).toUpperCase() + template.useWhen.slice(1)}
+            </p>
+            <span className="agentry-historycard__meta">
+              {Object.keys(template.workflow.agents).length} steps
+              {template.tags.length > 0 && ` \u00b7 ${template.tags.join(', ')}`}
+            </span>
+          </article>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+export function Sidebar({ view, onAddAgent, onImportSubworkflow, onOpenTemplate, history }: SidebarProps) {
   return (
     <aside className="agentry-sidebar">
       {view === 'agents' ? (
         <AgentsPanel onAddAgent={onAddAgent} onImportSubworkflow={onImportSubworkflow} />
+      ) : view === 'templates' ? (
+        <TemplatesPanel onOpen={onOpenTemplate} />
       ) : (
         <HistoryPanel {...history} />
       )}

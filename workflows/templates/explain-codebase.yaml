@@ -1,0 +1,100 @@
+# Explain this codebase
+# Use when: you are new to a repository, or handing one over, and want an overview a newcomer can read in ten minutes.
+# Tags: code, docs
+#
+# Flow: [map_structure | trace_flows | find_commands] -> write_overview -> save_overview
+# The three readers work at the same time and change nothing.
+
+introduction: Read a repository from three angles at once and write an architecture overview
+type: pipeline
+input:
+  description: "Optional: who the overview is for, or which part of the code matters most."
+  to: [map_structure, trace_flows, find_commands]
+output:
+  description: "An architecture overview at .agentry/output/architecture.md"
+  from: [save_overview]
+
+agents:
+  map_structure:
+    introduction: Map the layout and what each part owns
+    type: straight
+    output:
+      schema: { purpose: string, parts: "string[]", stack: "string[]" }
+    prompt: |
+      Read this repository's top level, its manifests (package.json, pyproject.toml, go.mod,
+      Cargo.toml and so on) and its README. Work out what the project is for and how it is
+      split up.
+
+      Return `purpose` (two sentences), `parts` (one entry per directory, package or module
+      that matters: "path - what it owns - what it depends on") and `stack` (languages,
+      frameworks and services it relies on). Do not change any file.
+    agent_mapping:
+      opencode: explore
+
+  trace_flows:
+    introduction: Follow the most important flows through the code
+    type: straight
+    output:
+      schema: { flows: "string[]" }
+    prompt: |
+      Find the two or three things this project mainly does at run time (handling a request,
+      running a command, processing a job) and follow each one through the code from its
+      entry point to its result.
+
+      Return `flows`, one entry per flow: its name, then the steps with "file:function" at
+      each step. Do not change any file.
+    agent_mapping:
+      opencode: explore
+
+  find_commands:
+    introduction: Find how to set up, run, test and ship it
+    type: straight
+    output:
+      schema: { commands: "string[]", config: "string[]" }
+    prompt: |
+      Find how to work on this project: install, build, run, test, lint and release. Look at
+      package scripts, Makefiles, CI configuration, Dockerfiles and the README. Also list the
+      configuration it reads: environment variables and config files, with what each is for.
+
+      Return `commands` ("what - command") and `config` ("name - what it does"). Do not
+      change any file.
+    agent_mapping:
+      opencode: explore
+
+  write_overview:
+    introduction: Write the overview
+    type: straight
+    input:
+      from: [map_structure, trace_flows, find_commands]
+    output:
+      schema: { overview: string }
+    prompt: |
+      Write an architecture overview from the three reports in the context, for a developer
+      on their first day. Use Markdown with these sections: "# Architecture", "## What it
+      does", "## How it is organised" (a table: part, path, responsibility), "## How a
+      request moves through it" (one subsection per flow), "## Working on it" (the commands)
+      and "## Configuration". Keep file references so readers can jump to the code. Write
+      only what the reports support.
+
+      Return the Markdown as `overview`.
+    agent_mapping:
+      opencode: general
+
+  save_overview:
+    introduction: Save the overview
+    type: tool
+    input:
+      from: write_overview
+    tool:
+      kind: write_file
+      path: .agentry/output/architecture.md
+      content: "{write_overview.overview}"
+    output:
+      schema: { path: string, bytes: number, mode: string }
+
+workflow:
+  - map_structure
+  - trace_flows
+  - find_commands
+  - write_overview
+  - save_overview

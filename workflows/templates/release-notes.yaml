@@ -1,0 +1,82 @@
+# Draft release notes
+# Use when: you are about to tag a release and want notes written from the commits since the last tag.
+# Tags: code, git, writing
+#
+# Flow: commits -> group -> write_notes -> save_notes
+# commits reads the git log without a model; tags show up in it, so the last release is easy to find.
+
+introduction: Sort the commits since the last tag into features and fixes, and write release notes
+type: pipeline
+input:
+  description: "Optional: the version you are about to release and anything the notes should highlight."
+  to: [group]
+output:
+  description: "Release notes in Markdown at .agentry/output/release-notes.md"
+  from: [save_notes]
+
+agents:
+  commits:
+    introduction: Read the latest commits, with their tags
+    type: tool
+    tool:
+      kind: script
+      command: [git, log, --no-merges, --decorate=short, "--pretty=format:%h%d %s", -n, "200"]
+      timeout_s: 30
+    output:
+      schema: { exit_code: number, stdout: string, stderr: string, result: any }
+
+  group:
+    introduction: Sort the changes since the last tag
+    type: straight
+    input:
+      from: commits
+      select: { commits: [stdout] }
+    output:
+      schema: { since: string, features: "string[]", fixes: "string[]", other: "string[]" }
+    prompt: |
+      The context holds `git log` output, newest first; a tagged commit shows "(tag: v1.2.0)".
+      Take the commits after the newest tag, or all of them when there is no tag, and set
+      `since` to that tag (or "the first commit").
+
+      Sort them into `features` (new things users can do), `fixes` (things that work now and
+      did not before) and `other` (changes users notice that are neither). Merge commits that
+      belong to one change into one entry. Leave out changes users never see: formatting,
+      CI, internal refactors, typo fixes. Write each entry in plain words, not the commit
+      message, with the short hashes in brackets.
+    agent_mapping:
+      opencode: general
+
+  write_notes:
+    introduction: Write the release notes
+    type: straight
+    input:
+      from: group
+    output:
+      schema: { notes: string }
+    prompt: |
+      Write release notes from the grouped changes in the context. Start with a "# " heading
+      (use the version from the context if one was given), then one or two sentences on what
+      the release is about, then "## New", "## Fixed" and "## Other changes" sections. Skip
+      empty sections. Keep each entry to one line and keep the hashes.
+
+      Return the Markdown as `notes`.
+    agent_mapping:
+      opencode: general
+
+  save_notes:
+    introduction: Save the release notes
+    type: tool
+    input:
+      from: write_notes
+    tool:
+      kind: write_file
+      path: .agentry/output/release-notes.md
+      content: "{write_notes.notes}"
+    output:
+      schema: { path: string, bytes: number, mode: string }
+
+workflow:
+  - commits
+  - group
+  - write_notes
+  - save_notes
