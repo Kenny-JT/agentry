@@ -200,7 +200,7 @@ The `mail` trigger reads Gmail and needs a Google OAuth client: run `agentry-wat
 
 ## Use it from other coding agents (MCP)
 
-[`packages/mcp`](packages/mcp) is an MCP server for one project. Through it, Claude Code, Codex, Cursor, opencode or any other MCP host can list, read, validate, edit and save workflows, start a run, follow it and stop it. A run executes on opencode through the plugin from the quick start, or, with `runtime: claude` or `codex`, inside the MCP server itself: every step is one headless `claude -p` or `codex exec` in the project, on your own account. Without the plugin, a run started from Claude Code or Codex uses that host's CLI by default. A step's `agent_mapping.claude_code` names a Claude Code subagent and `agent_mapping.codex` a Codex profile; without them the CLI's default agent runs it.
+[`packages/mcp`](packages/mcp) is an MCP server for one project. Through it, Claude Code, Codex, Cursor, opencode or any other MCP host can list, read, validate, edit and save workflows, start a run, follow it and stop it. A run executes on opencode through the plugin from the quick start, or, with `runtime: claude`, `codex` or `omo`, inside the MCP server itself: every step is one headless `claude -p`, `codex exec` or `omo -p` in the project, on your own account. Without the plugin, a run started from Claude Code, Codex or omo uses that host's CLI by default. A step's `agent_mapping.claude_code` names a Claude Code subagent, `agent_mapping.codex` a Codex profile and `agent_mapping.omo` an omo model; without them the CLI's default agent (or model) runs it.
 
 ```sh
 pnpm --filter @agentry/mcp build

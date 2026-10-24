@@ -234,6 +234,8 @@ export interface AgentMapping {
   claude_code?: string;
   /** The Codex config profile (`codex exec --profile <name>`). */
   codex?: string;
+  /** The omo model (`omo --model <pattern>`, e.g. `sonnet` or `anthropic-subscription/claude-sonnet-5-5:high`). */
+  omo?: string;
 }
 
 /** The hosts a run can execute on: the key of {@link AgentMapping} each one reads. */

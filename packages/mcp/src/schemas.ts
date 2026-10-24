@@ -107,9 +107,9 @@ export const toolInputs = {
     file: fileArg,
     input: z.string().optional().describe('text handed to the entry nodes as the workflow input'),
     runtime: z
-      .enum(['auto', 'opencode', 'claude', 'codex'])
+      .enum(['auto', 'opencode', 'claude', 'codex', 'omo'])
       .optional()
-      .describe('who runs the steps: opencode (its server + the Agentry plugin), claude (one headless `claude -p` per step) or codex (one `codex exec` per step); default auto = AGENTRY_RUNTIME, else opencode when the project has the Agentry plugin, else the host you are calling from, else opencode'),
+      .describe('who runs the steps: opencode (its server + the Agentry plugin), claude (one headless `claude -p` per step), codex (one `codex exec` per step) or omo (one `omo -p` per step); default auto = AGENTRY_RUNTIME, else opencode when the project has the Agentry plugin, else the host you are calling from, else opencode'),
   }),
   get_run: z.object({ run_id: z.string().optional().describe('default: the latest run') }),
   wait_for_run: z.object({

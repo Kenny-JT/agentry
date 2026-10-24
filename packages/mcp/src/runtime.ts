@@ -1,24 +1,25 @@
 /**
  * Which host executes a run. `opencode` goes through the opencode server and the plugin
- * (the dispatcher); `claude` and `codex` run the same scheduler in this process, each
+ * (the dispatcher); `claude`, `codex` and `omo` run the same scheduler in this process, each
  * node a headless CLI call on the user's own account.
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { ToolError } from './project';
 
-export type Runtime = 'opencode' | 'claude' | 'codex';
+export type Runtime = 'opencode' | 'claude' | 'codex' | 'omo';
 export type RuntimeChoice = Runtime | 'auto';
 
-export const RUNTIMES: readonly Runtime[] = ['opencode', 'claude', 'codex'];
+export const RUNTIMES: readonly Runtime[] = ['opencode', 'claude', 'codex', 'omo'];
 
 export const isRuntime = (v: string): v is Runtime => (RUNTIMES as readonly string[]).includes(v);
 
-/** The MCP client name from `initialize`: Claude Code, Codex and opencode each map to themselves; any other host to nothing. */
+/** The MCP client's name: Claude Code, Codex, omo (its client calls itself `senpi-mcp-client`) and opencode each map to themselves; any other host to nothing. */
 export function runtimeFromClientName(name: string | undefined): Runtime | null {
   const lower = (name ?? '').toLowerCase();
   if (/claude[-_ ]?code/.test(lower)) return 'claude';
   if (lower.includes('codex')) return 'codex';
+  if (lower.includes('senpi') || /\bomo\b/.test(lower)) return 'omo';
   if (lower.includes('opencode')) return 'opencode';
   return null;
 }

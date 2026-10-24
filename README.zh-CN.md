@@ -200,7 +200,7 @@ node packages/trigger/dist/agentry-watch.mjs --dir path/to/your/project
 
 ## 在其它编程 agent 里使用（MCP）
 
-[`packages/mcp`](packages/mcp) 是一个面向单个项目的 MCP 服务。通过它，Claude Code、Codex、Cursor、opencode 或任何支持 MCP 的工具都可以列出、读取、校验、修改、保存 workflow，以及启动、跟踪和停止一次运行。运行可以在 opencode 上通过快速开始里说的插件执行；也可以用 `runtime: claude` 或 `codex` 直接在 MCP 服务里执行：每一步就是在项目里调用一次无头的 `claude -p` 或 `codex exec`，用的是你自己的账号。项目里没有插件时，从 Claude Code 或 Codex 发起的运行默认就用那个宿主的 CLI。步骤的 `agent_mapping.claude_code` 指定一个 Claude Code 子代理，`agent_mapping.codex` 指定一个 Codex 配置档；不写时由 CLI 的默认 agent 来跑。
+[`packages/mcp`](packages/mcp) 是一个面向单个项目的 MCP 服务。通过它，Claude Code、Codex、Cursor、opencode 或任何支持 MCP 的工具都可以列出、读取、校验、修改、保存 workflow，以及启动、跟踪和停止一次运行。运行可以在 opencode 上通过快速开始里说的插件执行；也可以用 `runtime: claude`、`codex` 或 `omo` 直接在 MCP 服务里执行：每一步就是在项目里调用一次无头的 `claude -p`、`codex exec` 或 `omo -p`，用的是你自己的账号。项目里没有插件时，从 Claude Code、Codex 或 omo 发起的运行默认就用那个宿主的 CLI。步骤的 `agent_mapping.claude_code` 指定一个 Claude Code 子代理，`agent_mapping.codex` 指定一个 Codex 配置档，`agent_mapping.omo` 指定 omo 用的模型；不写时由 CLI 的默认 agent（或默认模型）来跑。
 
 ```sh
 pnpm --filter @agentry/mcp build

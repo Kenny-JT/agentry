@@ -7623,7 +7623,7 @@ function toolTemplateFields(spec) {
 }
 
 // ../core/src/runtime.ts
-var RUNTIME_NAMES = ["opencode", "claude_code", "codex"];
+var RUNTIME_NAMES = ["opencode", "claude_code", "codex", "omo"];
 var fromList = (from) => from === void 0 ? [] : Array.isArray(from) ? from : [from];
 var FEEDBACK_DEFAULT_MAX = 3;
 var FEEDBACK_MAX_LIMIT = 10;
