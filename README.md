@@ -16,7 +16,7 @@ Agentry is two pieces that work together:
 - **An editor** for multi-agent workflows. Place agents on a canvas, connect what one produces to what the next one reads, and add branches, conditions, loops and parallel steps. The result is a plain `workflow.yaml` that you can read, diff and commit.
 - **A runtime plugin for [opencode](https://opencode.ai)** that runs the file. Steps that don't depend on each other run at the same time, each step leaves its output on disk, a checkpoint after every step lets a stopped run continue where it left off, and a live panel shows the run as it happens.
 
-> **Status: 0.1 preview.** Workflows run on opencode, Claude Code, Codex or omo, and any MCP host can edit and start them through the [MCP server](#use-it-from-other-coding-agents-mcp). The YAML format may still change between 0.x versions.
+> **Status: 0.2 preview.** Workflows run on opencode, Claude Code, Codex or omo, and any MCP host can edit and start them through the [MCP server](#use-it-from-other-coding-agents-mcp). The YAML format may still change between 0.x versions.
 
 ## Demo
 

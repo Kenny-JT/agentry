@@ -5,7 +5,7 @@ import { Project, ToolError, summarizeNodes } from './project';
 import type { Runs } from './runs';
 import { toolInputs } from './schemas';
 
-export const SERVER_INFO = { name: 'agentry', version: '0.1.0' } as const;
+export const SERVER_INFO = { name: 'agentry', version: '0.2.0' } as const;
 
 const text = (data: unknown): CallToolResult => ({ content: [{ type: 'text', text: JSON.stringify(data) }] });
 const failure = (message: string): CallToolResult => ({ isError: true, content: [{ type: 'text', text: message }] });

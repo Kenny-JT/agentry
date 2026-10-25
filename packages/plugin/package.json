@@ -1,6 +1,6 @@
 {
   "name": "@agentry/plugin",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "description": "Agentry opencode plugin (runtime + live panel). Source of truth for .opencode/plugins/agentry.js, which `pnpm build` bundles from src/ together with @agentry/core and @agentry/design.",
