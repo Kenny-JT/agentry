@@ -1,6 +1,6 @@
 {
   "name": "@agentry/mcp",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "description": "agentry-mcp: a stdio MCP server that lets any agent host list, edit, validate, run and watch a project's Agentry workflows.",

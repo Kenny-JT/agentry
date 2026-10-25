@@ -16,7 +16,7 @@ Agentry 由两部分配合工作：
 - **编辑器**：在画布上摆放 agent，把一个 agent 的输出连到下一个 agent 的输入，再加上分支、条件、循环和并行步骤。结果是一份普通的 `workflow.yaml`，可以直接阅读、对比差异、提交到 git。
 - **[opencode](https://opencode.ai) 运行插件**：负责执行这份文件。互不依赖的步骤同时运行；每一步的输出都存到磁盘上；每步之后都有检查点，中断了可以从断点接着跑；运行过程在实时面板里看得到。
 
-> **状态：0.1 预览版。** 可以在 opencode、Claude Code、Codex 或 omo 上运行，任何支持 MCP 的工具都可以通过 [MCP 服务](#在其它编程-agent-里使用mcp)编辑和启动 workflow。0.x 版本之间，YAML 格式还可能变化。
+> **状态：0.2 预览版。** 可以在 opencode、Claude Code、Codex 或 omo 上运行，任何支持 MCP 的工具都可以通过 [MCP 服务](#在其它编程-agent-里使用mcp)编辑和启动 workflow。0.x 版本之间，YAML 格式还可能变化。
 
 ## 演示
 
