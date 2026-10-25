@@ -71,6 +71,8 @@ https://github.com/user-attachments/assets/0ca33f9b-70fd-4dce-b958-42e703f32c6f
    ```
 
    在 Windows PowerShell 里，把 `curl` 换成 `curl.exe`。opencode 第一次打开这个项目时，会把插件唯一的依赖装进 `.opencode/`，大约需要一分钟。
+
+   也可以让 opencode 从 npm 安装：在项目的 `opencode.json` 里写 `"plugin": ["opencode-agentry"]`。
 3. 在项目的 `workflows/` 文件夹里放一个 workflow，比如本仓库的 [`workflows/code-review.yaml`](workflows/code-review.yaml)；也可以在编辑器里画好再导出。
 4. 在项目里启动 opencode，让它「用 agentry 运行 `workflows/code-review.yaml`」。它会调用 `agentry_run` 工具，实时面板随之打开。
 

@@ -71,6 +71,8 @@ The Gmail and Google Calendar helper tools used in these clips are not part of t
    ```
 
    In Windows PowerShell, type `curl.exe` instead of `curl`. The first time opencode opens the project it installs the plugin's one dependency into `.opencode/`, which takes about a minute.
+
+   Or let opencode install it from npm: put `"plugin": ["opencode-agentry"]` in the project's `opencode.json`.
 3. Put a workflow in your project's `workflows/` folder, for example [`workflows/code-review.yaml`](workflows/code-review.yaml) from this repository, or draw one in the editor and export it.
 4. Start opencode in the project and ask it to *run `workflows/code-review.yaml` with agentry*. It calls the `agentry_run` tool and the live panel opens.
 
