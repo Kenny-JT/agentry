@@ -55,4 +55,4 @@ To release:
 2. Merge that pull request.
 3. Tag `main`: `git tag vX.Y.Z` and `git push origin vX.Y.Z`.
 4. The Release workflow builds a draft GitHub release with the plugin, `agentry-watch`, `agentry-mcp` and the desktop installers. Check it, then publish it.
-5. Publishing the release starts the npm workflow, which publishes `agentry-mcp`, `agentry-watch` and `opencode-agentry` from the release files. It needs the `NPM_TOKEN` repository secret (an npm automation token); without it the workflow only does a dry run. For a release that is already out, run the npm workflow by hand with its tag.
+5. Publishing the release starts the npm workflow, which publishes `agentry-mcp`, `agentry-watch` and `opencode-agentry` from the release files. It signs in with npm trusted publishing, so there is no token to manage: on npmjs.com each package lists this repository and `npm.yml` as its trusted publisher, with `npm publish` allowed. A new trusted publisher entry expires unless a publish through it succeeds within 2 days. Versions already on npm are skipped, so a failed run can be re-run. For a release that is already out, run the npm workflow by hand with its tag.

@@ -1,6 +1,7 @@
 # Publish a release's files to npm as agentry-mcp, agentry-watch and opencode-agentry.
 # Runs when a release is published, or by hand for an existing tag (Actions -> npm -> Run workflow).
-# Needs the NPM_TOKEN secret (an npm automation token); without it the job only dry-runs.
+# Signs in to npm with trusted publishing (OIDC), so no token is stored: on npmjs.com each package
+# lists Kenny-JT/agentry and npm.yml as its trusted publisher, with `npm publish` allowed.
 name: npm
 
 on:
@@ -21,16 +22,17 @@ jobs:
     runs-on: ubuntu-latest
     env:
       TAG: ${{ github.event.release.tag_name || inputs.tag }}
-      NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
     steps:
       - uses: actions/checkout@v7
         with:
           ref: ${{ env.TAG }}
 
+      # Trusted publishing needs npm 11.5.1 or later, which Node 24 ships.
       - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version: 24
           registry-url: https://registry.npmjs.org
+          package-manager-cache: false
 
       - name: Download the release files
         env:
@@ -43,10 +45,10 @@ jobs:
       - name: Publish
         run: |
           for dir in npm/*/; do
-            if [ -n "$NODE_AUTH_TOKEN" ]; then
-              npm publish "$dir" --access public --provenance
+            name=$(basename "$dir")
+            if [ -n "$(npm view "$name@${TAG#v}" version 2>/dev/null)" ]; then
+              echo "$name@${TAG#v} is already on npm, skipping it"
             else
-              echo "NPM_TOKEN is not set, so this is a dry run for $dir"
-              npm publish "$dir" --dry-run
+              npm publish "$dir" --access public
             fi
           done
