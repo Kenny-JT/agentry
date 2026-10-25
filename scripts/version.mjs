@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // One version for the whole repo: every package.json, the Tauri config, the desktop crate
-// (Cargo.toml + its Cargo.lock entry). Releases are tagged vX.Y.Z from this number.
+// (Cargo.toml + its Cargo.lock entry) and the version the MCP server reports. Releases are
+// tagged vX.Y.Z from this number.
 //
 //   node scripts/version.mjs                     list every file's version
 //   node scripts/version.mjs --check             exit 1 unless all files agree
@@ -19,6 +20,7 @@ const SEMVER = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/;
 const jsonVersion = /("version"\s*:\s*")([^"]+)(")/;
 const cargoVersion = /(\[package\][^[]*?\nversion\s*=\s*")([^"]+)(")/;
 const lockVersion = /(\[\[package\]\]\r?\nname = "app"\r?\nversion = ")([^"]+)(")/;
+const serverInfoVersion = /(SERVER_INFO = \{ name: 'agentry', version: ')([^']+)(')/;
 
 const packageJsons = ['package.json', ...fs.readdirSync(path.join(root, 'packages'))
   .map((dir) => `packages/${dir}/package.json`)
@@ -29,6 +31,7 @@ const targets = [
   { file: 'packages/app/src-tauri/tauri.conf.json', pattern: jsonVersion },
   { file: 'packages/app/src-tauri/Cargo.toml', pattern: cargoVersion },
   { file: 'packages/app/src-tauri/Cargo.lock', pattern: lockVersion },
+  { file: 'packages/mcp/src/server.ts', pattern: serverInfoVersion },
 ];
 
 function read() {
