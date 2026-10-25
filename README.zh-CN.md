@@ -16,7 +16,7 @@ Agentry 由两部分配合工作：
 - **编辑器**：在画布上摆放 agent，把一个 agent 的输出连到下一个 agent 的输入，再加上分支、条件、循环和并行步骤。结果是一份普通的 `workflow.yaml`，可以直接阅读、对比差异、提交到 git。
 - **[opencode](https://opencode.ai) 运行插件**：负责执行这份文件。互不依赖的步骤同时运行；每一步的输出都存到磁盘上；每步之后都有检查点，中断了可以从断点接着跑；运行过程在实时面板里看得到。
 
-> **状态：0.1 预览版。** 目前在 opencode 上运行；Claude Code、Codex 等支持 MCP 的工具可以通过 [MCP 服务](#在其它编程-agent-里使用mcp)编辑和启动 workflow。0.x 版本之间，YAML 格式还可能变化。
+> **状态：0.1 预览版。** 可以在 opencode、Claude Code、Codex 或 omo 上运行，任何支持 MCP 的工具都可以通过 [MCP 服务](#在其它编程-agent-里使用mcp)编辑和启动 workflow。0.x 版本之间，YAML 格式还可能变化。
 
 ## 演示
 
@@ -74,7 +74,7 @@ https://github.com/user-attachments/assets/0ca33f9b-70fd-4dce-b958-42e703f32c6f
 3. 在项目的 `workflows/` 文件夹里放一个 workflow，比如本仓库的 [`workflows/code-review.yaml`](workflows/code-review.yaml)；也可以在编辑器里画好再导出。
 4. 在项目里启动 opencode，让它「用 agentry 运行 `workflows/code-review.yaml`」。它会调用 `agentry_run` 工具，实时面板随之打开。
 
-编辑器的安装包会随第一个正式版本一起发布，在那之前请从源码运行（见下文）。
+编辑器的安装包（Windows、macOS、Linux）在[最新 Release](https://github.com/Kenny-JT/agentry/releases/latest) 里，也可以从源码运行（见下文）。
 
 ## workflow 文件长什么样
 
@@ -192,9 +192,10 @@ on:
 然后让 `agentry-watch` 一直为这个项目运行着。它把触发事件（新文件、新提交、新邮件）交给 workflow 的第一批步骤，并在 `127.0.0.1:4096` 的 opencode 服务上运行 workflow；没有在运行的服务就自己启动一个：
 
 ```sh
-pnpm --filter @agentry/trigger build
-node packages/trigger/dist/agentry-watch.mjs --dir path/to/your/project
+npx -y agentry-watch --dir path/to/your/project
 ```
+
+用本仓库的源码也行：先 `pnpm --filter @agentry/trigger build`，再 `node packages/trigger/dist/agentry-watch.mjs`。
 
 `mail` 触发器读取 Gmail，需要一个 Google OAuth 客户端：先运行一次 `agentry-watch auth google --client client.json`。
 
@@ -203,11 +204,10 @@ node packages/trigger/dist/agentry-watch.mjs --dir path/to/your/project
 [`packages/mcp`](packages/mcp) 是一个面向单个项目的 MCP 服务。通过它，Claude Code、Codex、Cursor、opencode 或任何支持 MCP 的工具都可以列出、读取、校验、修改、保存 workflow，以及启动、跟踪和停止一次运行。运行可以在 opencode 上通过快速开始里说的插件执行；也可以用 `runtime: claude`、`codex` 或 `omo` 直接在 MCP 服务里执行：每一步就是在项目里调用一次无头的 `claude -p`、`codex exec` 或 `omo -p`，用的是你自己的账号。项目里没有插件时，从 Claude Code、Codex 或 omo 发起的运行默认就用那个宿主的 CLI。步骤的 `agent_mapping.claude_code` 指定一个 Claude Code 子代理，`agent_mapping.codex` 指定一个 Codex 配置档，`agent_mapping.omo` 指定 omo 用的模型；不写时由 CLI 的默认 agent（或默认模型）来跑。
 
 ```sh
-pnpm --filter @agentry/mcp build
-claude mcp add agentry --scope project -- node /path/to/agentry/packages/mcp/dist/agentry-mcp.mjs --dir .
+claude mcp add agentry --scope project -- npx -y agentry-mcp --dir .
 ```
 
-同一个文件也能在终端里跑一个 workflow 并等它结束：`node packages/mcp/dist/agentry-mcp.mjs run review.yaml --runtime claude`。
+在 Windows 上，`--` 后面写成 `cmd /c npx -y agentry-mcp --dir .`。同一个命令也能在终端里跑一个 workflow 并等它结束：`npx -y agentry-mcp run review.yaml --runtime claude`。用源码的话，`pnpm --filter @agentry/mcp build` 会把服务写到 `packages/mcp/dist/agentry-mcp.mjs`，直接用 `node` 运行。
 
 Codex、Cursor、opencode 和 Claude Desktop 的配置方法见 [`packages/mcp/README.md`](packages/mcp/README.md)，那里还有一个教 agent 写 workflow 格式的 skill 文件。
 

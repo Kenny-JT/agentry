@@ -16,7 +16,7 @@ Agentry is two pieces that work together:
 - **An editor** for multi-agent workflows. Place agents on a canvas, connect what one produces to what the next one reads, and add branches, conditions, loops and parallel steps. The result is a plain `workflow.yaml` that you can read, diff and commit.
 - **A runtime plugin for [opencode](https://opencode.ai)** that runs the file. Steps that don't depend on each other run at the same time, each step leaves its output on disk, a checkpoint after every step lets a stopped run continue where it left off, and a live panel shows the run as it happens.
 
-> **Status: 0.1 preview.** Workflows run on opencode today; Claude Code, Codex and other MCP hosts can edit and start them through the [MCP server](#use-it-from-other-coding-agents-mcp). The YAML format may still change between 0.x versions.
+> **Status: 0.1 preview.** Workflows run on opencode, Claude Code, Codex or omo, and any MCP host can edit and start them through the [MCP server](#use-it-from-other-coding-agents-mcp). The YAML format may still change between 0.x versions.
 
 ## Demo
 
@@ -74,7 +74,7 @@ The Gmail and Google Calendar helper tools used in these clips are not part of t
 3. Put a workflow in your project's `workflows/` folder, for example [`workflows/code-review.yaml`](workflows/code-review.yaml) from this repository, or draw one in the editor and export it.
 4. Start opencode in the project and ask it to *run `workflows/code-review.yaml` with agentry*. It calls the `agentry_run` tool and the live panel opens.
 
-Installers for the editor come with the first release. Until then, run it from source (below).
+Installers for the editor (Windows, macOS and Linux) are on the [latest release](https://github.com/Kenny-JT/agentry/releases/latest); you can also run it from source (below).
 
 ## A workflow file
 
@@ -192,9 +192,10 @@ on:
 Then keep `agentry-watch` running for the project. It hands the event (the new files, the new commits, the new mail) to the workflow's first steps, and runs the workflow on the opencode server at `127.0.0.1:4096`, starting one if none is running:
 
 ```sh
-pnpm --filter @agentry/trigger build
-node packages/trigger/dist/agentry-watch.mjs --dir path/to/your/project
+npx -y agentry-watch --dir path/to/your/project
 ```
+
+From a clone of this repository, `pnpm --filter @agentry/trigger build` and then `node packages/trigger/dist/agentry-watch.mjs` does the same.
 
 The `mail` trigger reads Gmail and needs a Google OAuth client: run `agentry-watch auth google --client client.json` once.
 
@@ -203,11 +204,10 @@ The `mail` trigger reads Gmail and needs a Google OAuth client: run `agentry-wat
 [`packages/mcp`](packages/mcp) is an MCP server for one project. Through it, Claude Code, Codex, Cursor, opencode or any other MCP host can list, read, validate, edit and save workflows, start a run, follow it and stop it. A run executes on opencode through the plugin from the quick start, or, with `runtime: claude`, `codex` or `omo`, inside the MCP server itself: every step is one headless `claude -p`, `codex exec` or `omo -p` in the project, on your own account. Without the plugin, a run started from Claude Code, Codex or omo uses that host's CLI by default. A step's `agent_mapping.claude_code` names a Claude Code subagent, `agent_mapping.codex` a Codex profile and `agent_mapping.omo` an omo model; without them the CLI's default agent (or model) runs it.
 
 ```sh
-pnpm --filter @agentry/mcp build
-claude mcp add agentry --scope project -- node /path/to/agentry/packages/mcp/dist/agentry-mcp.mjs --dir .
+claude mcp add agentry --scope project -- npx -y agentry-mcp --dir .
 ```
 
-The same file runs one workflow from a terminal and waits for it: `node packages/mcp/dist/agentry-mcp.mjs run review.yaml --runtime claude`.
+On Windows, write `cmd /c npx -y agentry-mcp --dir .` after the `--`. The same command runs one workflow from a terminal and waits for it: `npx -y agentry-mcp run review.yaml --runtime claude`. From a clone, `pnpm --filter @agentry/mcp build` writes the server to `packages/mcp/dist/agentry-mcp.mjs`, which runs with plain `node`.
 
 [`packages/mcp/README.md`](packages/mcp/README.md) has the setup for Codex, Cursor, opencode and Claude Desktop, plus a skill file that teaches an agent the workflow format.
 
