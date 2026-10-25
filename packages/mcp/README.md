@@ -3,10 +3,10 @@
 A stdio [MCP](https://modelcontextprotocol.io) server over one Agentry project. Register it in any MCP host — Claude Code, Codex CLI, Cursor, opencode, Claude Desktop, Marvis — and that host's agent can list, read, validate, edit, save, run and watch the project's `workflows/*.yaml` without the desktop editor or a plugin of its own.
 
 ```
-node packages/mcp/dist/agentry-mcp.mjs --dir <project>
+npx -y agentry-mcp --dir <project>
 ```
 
-`--dir` defaults to the current directory (or `AGENTRY_PROJECT_DIR`). One file, plain `node`, nothing to install: `pnpm --filter @agentry/mcp build` writes `dist/agentry-mcp.mjs` (it is also attached to every GitHub release next to `agentry-watch.mjs`). stdout is the protocol; the server's own messages go to stderr.
+`--dir` defaults to the current directory (or `AGENTRY_PROJECT_DIR`). The npm package is one file that runs on plain `node`: the same `agentry-mcp.mjs` that is attached to every GitHub release next to `agentry-watch.mjs`, and that `pnpm --filter @agentry/mcp build` writes to `dist/agentry-mcp.mjs`. stdout is the protocol; the server's own messages go to stderr.
 
 ## Tools
 
@@ -54,7 +54,7 @@ starts one run with the same rules as `run_workflow`, waits for it, and prints e
 
 ## Registering the server
 
-Replace `<path>` with the folder that holds `agentry-mcp.mjs` and run the host from the project directory (or pass `--dir <project>` instead of `.`).
+Replace `<path>` with the folder that holds `agentry-mcp.mjs` and run the host from the project directory (or pass `--dir <project>` instead of `.`). `npx -y agentry-mcp` works in place of `node <path>/agentry-mcp.mjs`; on Windows, a host that starts the command without a shell needs `cmd /c npx -y agentry-mcp`.
 
 ### Claude Code
 
